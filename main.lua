@@ -16,8 +16,8 @@ require("utils")
 local img_parrot = lg.newImage("assets/parrot.png")
 local img_parrot_data = love.image.newImageData("assets/parrot.png")
 local img_no_background = nil
-local MODEL = "models/u2net.onnx" -- u2netp, u2net, birefnet-lite-512
--- local MODEL = "models/birefnet-lite-512.onnx" -- u2netp, u2net, birefnet-lite-512
+-- local MODEL = "models/u2net.onnx" -- u2netp, u2net, birefnet-lite-512
+local MODEL = "models/birefnet-lite-512.onnx" -- u2netp, u2net, birefnet-lite-512
 local THRESHOLD = 0.25
 
 

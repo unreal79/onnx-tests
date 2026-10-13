@@ -194,6 +194,13 @@ ffi.cdef([[
         OrtStatus* (__stdcall *AllocatorFree)(OrtAllocator* ort_allocator, void* p);
         OrtStatus* (__stdcall *AllocatorGetInfo)(const OrtAllocator* ort_allocator, const OrtMemoryInfo** out);
         OrtStatus* (__stdcall *GetAllocatorWithDefaultOptions)(OrtAllocator** out);
+        void (__stdcall *ReleaseMemoryInfo)(OrtMemoryInfo* ptr);
+        void (__stdcall *ReleaseTypeInfo)(OrtTypeInfo* ptr);
+        void (__stdcall *ReleaseTensorTypeAndShapeInfo)(OrtTensorTypeAndShapeInfo* ptr);
+        void (__stdcall *ReleaseValue)(OrtValue* value);
+        void (__stdcall *ReleaseSession)(OrtSession* session);
+        void (__stdcall *ReleaseSessionOptions)(OrtSessionOptions* options);
+        void (__stdcall *ReleaseEnv)(OrtEnv* env);
     };
 
     const OrtApiBase* __stdcall OrtGetApiBase(void);
@@ -242,6 +249,10 @@ end
 local function check(status, action)
     if not has_status(status) then
         return
+    end
+
+    if state.api == nil or type(state.api.GetErrorCode) ~= "function" or type(state.api.GetErrorMessage) ~= "function" then
+        error(string.format("ONNX Runtime %s failed, but the API table is unavailable or incomplete", action), 2)
     end
 
     local err_code = tonumber(state.api.GetErrorCode(status)) or -1
@@ -358,8 +369,16 @@ function Onnx.create_session(model_path)
     end
 
     local env = Onnx.create_env()
+
+    -- setting session options
     local options_out = ffi.new("OrtSessionOptions*[1]")
     check(api.CreateSessionOptions(options_out), "CreateSessionOptions")
+    check(api.DisableProfiling(options_out[0]), "DisableProfiling")
+    check(api.SetSessionGraphOptimizationLevel(options_out[0],
+        1), "SetSessionGraphOptimizationLevel") -- sets the graph optimization level to basic=1
+    -- check(api.DisableMemPattern(options_out[0]), "DisableMemPattern") -- ?
+    -- check(api.EnableMemPattern(options_out[0]), "EnableMemPattern")
+    check(api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
 
     local session_out = ffi.new("OrtSession*[1]")
     local wide_model_path = utf8_to_wide(model_path)
@@ -642,6 +661,13 @@ local function get_session_input_shape(session_or_ptr, input_name)
                 end
             end
 
+            if type_info[0] ~= nil and type_info[0] ~= NULL and state.api.ReleaseTypeInfo ~= nil then
+                check(state.api.ReleaseTypeInfo(type_info[0]), "ReleaseTypeInfo")
+            end
+            -- if tensor_info[0] ~= nil and tensor_info[0] ~= NULL and state.api.ReleaseTensorTypeAndShapeInfo ~= nil then
+            --     check(state.api.ReleaseTensorTypeAndShapeInfo(tensor_info[0]), "ReleaseTensorTypeAndShapeInfo") -- TODO
+            -- end
+
             print(string.format("Detected input shape for tensor '%s': %s", input_name, table.concat(dims, "x")))
             return dims
         end
@@ -767,7 +793,43 @@ function Onnx.remove_background(session, image_or_data, threshold)
     print(string.format("Center pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
             r * 255, g * 255, b * 255, a * 255, a))
 
+    -- local memory_before_kb = collectgarbage("count")
+    -- print(string.format("Memory before ONNX Runtime cleanup: %.1f KB", memory_before_kb))
 
+    if input_value[0] ~= nil and input_value[0] ~= NULL and state.api.ReleaseValue ~= nil then
+        check(state.api.ReleaseValue(input_value[0]), "ReleaseValue")
+        input_value[0] = NULL
+    else
+        print("Input value was not released because it is nil or already NULL")
+    end
+    if output_tensors_ptr[0] ~= nil and output_tensors_ptr[0] ~= NULL and state.api.ReleaseValue ~= nil then
+        check(state.api.ReleaseValue(output_tensors_ptr[0]), "ReleaseValue")
+        output_tensors_ptr[0] = NULL
+    else
+        print("Output tensors pointer was not released because it is nil or already NULL")
+    end
+    -- if mem_info_out[0] ~= nil and mem_info_out[0] ~= NULL and state.api.ReleaseMemoryInfo ~= nil then
+    --     state.api.ReleaseMemoryInfo(mem_info_out[0]) -- TODO: crash
+    --     mem_info_out[0] = NULL
+    -- else
+    --     print("Memory info was not released because it is nil or already NULL")
+    -- end
+    -- if session.session ~= nil and session.session ~= NULL and state.api.ReleaseSession ~= nil then
+    --     state.api.ReleaseSession(session.session) -- TODO: crash
+    --     session.session = NULL
+    -- else
+    --     print("Session was not released because it is nil or already NULL or session.session is nil")
+    -- end
+    -- if state.api.ReleaseEnv ~= nil then
+    --     state.api.ReleaseEnv(session.env) -- TODO: crash
+    -- else
+    --     print("Environment was not released because ReleaseEnv is nil")
+    -- end
+
+    -- collectgarbage()
+    -- local memory_after_kb = collectgarbage("count")
+    -- print(string.format("ONNX Runtime cleanup memory: %.1f KB -> %.1f KB (freed %.1f KB)",
+    --     memory_before_kb, memory_after_kb, math.max(0, memory_before_kb - memory_after_kb)))
 
     return love.graphics.newImage(output_image_data)
 end
