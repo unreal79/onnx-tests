@@ -45,6 +45,7 @@ ffi.cdef([[
         ORT_DISABLE_ALL = 0,
         ORT_ENABLE_BASIC = 1,
         ORT_ENABLE_EXTENDED = 2,
+        ORT_ENABLE_LAYOUT = 3,
         ORT_ENABLE_ALL = 99
     } GraphOptimizationLevel;
 
@@ -682,9 +683,11 @@ end
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to process.
 --- @param threshold number|nil # Threshold for background removal (default is 0.5).
---- @return love.Image # New Love2D image with transparent background.
-function Onnx.remove_background(session, image_or_data, threshold)
+--- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.
+--- @return love.Image|love.ImageData # New asset with transparent background.
+function Onnx.remove_background(session, image_or_data, threshold, return_image_data)
     threshold = threshold or 0.5
+    return_image_data = return_image_data == true
     if type(session) ~= "table" or type(session.session) == "nil" then
         error("ONNX Runtime session is invalid", 2)
     end
@@ -786,15 +789,12 @@ function Onnx.remove_background(session, image_or_data, threshold)
         end
     end
 
-    local r, g, b, a = image_data:getPixel(0, 0)
+    local r, g, b, a = output_image_data:getPixel(0, 0)
     print(string.format("Top-left pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
             r * 255, g * 255, b * 255, a * 255, a))
-    r, g, b, a = image_data:getPixel(src_w / 2 + 1, src_h / 2 + 1)
+    r, g, b, a = output_image_data:getPixel(src_w / 2 + 1, src_h / 2 + 1)
     print(string.format("Center pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
             r * 255, g * 255, b * 255, a * 255, a))
-
-    -- local memory_before_kb = collectgarbage("count")
-    -- print(string.format("Memory before ONNX Runtime cleanup: %.1f KB", memory_before_kb))
 
     if input_value[0] ~= nil and input_value[0] ~= NULL and state.api.ReleaseValue ~= nil then
         check(state.api.ReleaseValue(input_value[0]), "ReleaseValue")
@@ -826,10 +826,9 @@ function Onnx.remove_background(session, image_or_data, threshold)
     --     print("Environment was not released because ReleaseEnv is nil")
     -- end
 
-    -- collectgarbage()
-    -- local memory_after_kb = collectgarbage("count")
-    -- print(string.format("ONNX Runtime cleanup memory: %.1f KB -> %.1f KB (freed %.1f KB)",
-    --     memory_before_kb, memory_after_kb, math.max(0, memory_before_kb - memory_after_kb)))
+    if return_image_data then
+        return output_image_data
+    end
 
     return love.graphics.newImage(output_image_data)
 end
