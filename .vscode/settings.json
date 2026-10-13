@@ -24,8 +24,7 @@
         "DEBUG:",
         "TODO",
         "HACK",
-        "FIXME",
-        "WARNING"
+        "FIXME"
     ],
     "stylua.targetReleaseVersion": "latest",
     "markdown.validate.enabled": true

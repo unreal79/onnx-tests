@@ -16,7 +16,9 @@ require("utils")
 local img_parrot = lg.newImage("assets/parrot.png")
 local img_parrot_data = love.image.newImageData("assets/parrot.png")
 local img_no_background = nil
-local MODEL = "models/u2net.onnx" -- u2netp, u2net
+local MODEL = "models/u2net.onnx" -- u2netp, u2net, birefnet-lite-512
+-- local MODEL = "models/birefnet-lite-512.onnx" -- u2netp, u2net, birefnet-lite-512
+local THRESHOLD = 0.25
 
 
 function love.load()
@@ -38,7 +40,7 @@ function love.load()
         print_to_screen("ONNX initialized successfully")
         local session = Onnx.create_session(MODEL)
         print_to_screen(session.message)
-        img_no_background = Onnx.remove_background(session, img_parrot_data)
+        img_no_background = Onnx.remove_background(session, img_parrot_data, THRESHOLD)
 
         local time_final = love.timer.getTime()
         print_to_screen("Background removed from image successfully")
@@ -61,8 +63,11 @@ end
 
 function love.draw()
     lg.print(love.graphics.getStats().drawcalls, 10, 10)
+
+    lg.clear(0, 0, 1, 1)
+    lg.setColor(1, 1, 1, 1)
     lg.draw(img_parrot, 200, 10)
-    lg.draw(img_no_background or img_parrot, 210 + img_parrot:getWidth(), 10)
+    lg.draw(img_no_background or img_parrot, 200 + img_parrot:getWidth(), 10)
 end
 
 

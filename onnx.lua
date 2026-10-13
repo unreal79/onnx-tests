@@ -401,7 +401,7 @@ end
 
 
 --- Reads the input or output tensor name for a specific session index.
---- @param session_ptr userdata # ONNX Runtime session handle.
+--- @param session_ptr userdata|table # ONNX Runtime session handle.
 --- @param index integer # Tensor index within the session.
 --- @param is_input boolean # True to query an input name, false for an output name.
 --- @return string # Tensor name.
@@ -441,7 +441,57 @@ local function get_session_tensor_names(session_ptr)
         output_names[#output_names + 1] = get_session_name(session_ptr, i, false)
     end
 
+    print("Input tensor names: " .. table.concat(input_names, ", "))
+    print("Output tensor names: " .. table.concat(output_names, ", "))
     return input_names, output_names
+end
+
+
+--- Infers the model size expected by the input tensor.
+--- @param input_shape table|nil # ONNX input shape list.
+--- @return number # Width in pixels.
+--- @return number # Height in pixels.
+--- @return number # Channel count.
+local function infer_model_input_size(input_shape)
+    if type(input_shape) ~= "table" or #input_shape == 0 then
+        print("Invalid input shape, using default size 320x320x3")
+        return 320, 320, 3
+    end
+
+    local shape = {}
+    for _, dim in ipairs(input_shape) do
+        shape[#shape + 1] = tonumber(dim) or 0
+    end
+
+    local target_w = nil
+    local target_h = nil
+    local channel_count = 3
+
+    if #shape >= 4 then
+        if shape[1] == 1 and shape[2] > 0 then
+            channel_count = shape[2]
+            target_h = shape[3]
+            target_w = shape[4]
+        elseif shape[#shape] == 3 then
+            target_h = shape[#shape - 2]
+            target_w = shape[#shape - 1]
+            channel_count = 3
+        else
+            target_h = shape[#shape - 1]
+            target_w = shape[#shape]
+        end
+    elseif #shape >= 2 then
+        target_h = shape[#shape - 1]
+        target_w = shape[#shape]
+    end
+
+    if type(target_w) ~= "number" or type(target_h) ~= "number" or target_w <= 0 or target_h <= 0 then
+        print("Invalid target width or height, using default size 320x320")
+        return 320, 320, channel_count
+    end
+
+    print(string.format("Detected target size: %dx%d with %d channels", target_w, target_h, channel_count))
+    return target_w, target_h, channel_count
 end
 
 
@@ -468,6 +518,7 @@ local function get_value_shape(value)
 
     local element_count_out = ffi.new("size_t[1]")
     check(state.api.GetTensorShapeElementCount(shape_info_out[0], element_count_out), "GetTensorShapeElementCount")
+    print(string.format("Tensor element count: %d", tonumber(element_count_out[0]) or 0))
     return dims, tonumber(element_count_out[0]) or 0
 end
 
@@ -482,12 +533,14 @@ local function resolve_mask_dimensions(dims, element_count)
         local mask_h = dims[#dims - 1]
         local mask_w = dims[#dims]
         if mask_h ~= nil and mask_w ~= nil and mask_h > 0 and mask_w > 0 and mask_h * mask_w <= element_count then
+            print(string.format("Using mask dimensions from tensor: %dx%d", mask_w, mask_h))
             return mask_w, mask_h
         end
     end
 
     local square_side = math.floor(math.sqrt(element_count))
     if square_side > 0 and square_side * square_side == element_count then
+        print(string.format("Using square mask dimensions: %dx%d", square_side, square_side))
         return square_side, square_side
     end
 
@@ -514,11 +567,11 @@ end
 --- @param target_w integer # Target width used by the U2Net model.
 --- @param target_h integer # Target height used by the U2Net model.
 --- @return any # Float buffer containing normalized RGB channels.
-local function u2net_resize_and_normalize(image_data, target_w, target_h)
+local function resize_and_normalize(image_data, target_w, target_h, channel_count)
     local src_w = image_data:getWidth()
     local src_h = image_data:getHeight()
-
-    local float_buffer = ffi.new("float[?]", target_w * target_h * 3)
+    local float_buffer_size = target_w * target_h * channel_count
+    local float_buffer = ffi.new("float[?]", float_buffer_size)
     local max_x = src_w - 1
     local max_y = src_h - 1
     local plane_size = target_w * target_h
@@ -530,20 +583,82 @@ local function u2net_resize_and_normalize(image_data, target_w, target_h)
             local r, g, b = image_data:getPixel(src_x, src_y)
             local pixel_index = y * target_w + x
 
-            float_buffer[pixel_index] = (r - 0.485) / 0.229
-            float_buffer[plane_size + pixel_index] = (g - 0.456) / 0.224
-            float_buffer[plane_size * 2 + pixel_index] = (b - 0.406) / 0.225
+            if channel_count >= 3 then
+                float_buffer[pixel_index] = (r - 0.485) / 0.229
+                float_buffer[plane_size + pixel_index] = (g - 0.456) / 0.224
+                float_buffer[plane_size * 2 + pixel_index] = (b - 0.406) / 0.225
+            else
+                float_buffer[pixel_index] = r / 255.0
+            end
         end
     end
 
+    print("Float buffer size: " .. tostring(float_buffer_size) .. " bytes")
     return float_buffer
 end
 
---- Runs the U2Net model on an image and returns a new image with background removed.
+
+--- Reads the shape of a specific input tensor for the current ONNX session.
+--- @param session_or_ptr userdata|table # ONNX session handle or session metadata table.
+--- @param input_name string # Input tensor name to inspect.
+--- @return table|nil # Input shape as a list of dimensions or nil if not found.
+local function get_session_input_shape(session_or_ptr, input_name)
+    local session_ptr = session_or_ptr
+    if type(session_or_ptr) == "table" then
+        if session_or_ptr.session == nil then
+            print("Session metadata does not contain a valid session handle")
+            return nil
+        end
+        session_ptr = session_or_ptr.session
+    end
+
+    if type(input_name) ~= "string" or input_name == "" then
+        print("Invalid input name: " .. tostring(input_name))
+        return nil
+    end
+
+    local input_count = ffi.new("size_t[1]")
+    check(state.api.SessionGetInputCount(session_ptr, input_count), "SessionGetInputCount")
+
+    for i = 0, tonumber(input_count[0]) - 1 do
+        local name = get_session_name(session_ptr, i, true)
+        if name == input_name then
+            local type_info = ffi.new("OrtTypeInfo*[1]")
+            check(state.api.SessionGetInputTypeInfo(session_ptr, i, type_info), "SessionGetInputTypeInfo")
+
+            local tensor_info = ffi.new("const OrtTensorTypeAndShapeInfo*[1]")
+            check(state.api.CastTypeInfoToTensorInfo(type_info[0], tensor_info), "CastTypeInfoToTensorInfo")
+
+            local dims_count_out = ffi.new("size_t[1]")
+            check(state.api.GetDimensionsCount(tensor_info[0], dims_count_out), "GetDimensionsCount")
+
+            local dims_count = tonumber(dims_count_out[0])
+            local dims = {}
+            if dims_count > 0 then
+                local dims_buffer = ffi.new("int64_t[?]", dims_count)
+                check(state.api.GetDimensions(tensor_info[0], dims_buffer, dims_count), "GetDimensions")
+                for idx = 0, dims_count - 1 do
+                    dims[#dims + 1] = tonumber(dims_buffer[idx])
+                end
+            end
+
+            print(string.format("Detected input shape for tensor '%s': %s", input_name, table.concat(dims, "x")))
+            return dims
+        end
+    end
+
+    print("Input tensor not found: " .. tostring(input_name))
+    return nil
+end
+
+
+--- Runs the segmentation model on an image and returns a new image with background removed.
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to process.
+--- @param threshold number|nil # Threshold for background removal (default is 0.5).
 --- @return love.Image # New Love2D image with transparent background.
-function Onnx.remove_background(session, image_or_data)
+function Onnx.remove_background(session, image_or_data, threshold)
+    threshold = threshold or 0.5
     if type(session) ~= "table" or type(session.session) == "nil" then
         error("ONNX Runtime session is invalid", 2)
     end
@@ -557,35 +672,40 @@ function Onnx.remove_background(session, image_or_data)
         image_data = image_or_data:getData()
     end
 
-    local src_w = image_data:getWidth()
-    local src_h = image_data:getHeight()
-    local target_w = 320 -- TODO: depending on the model, this might need to be adjusted.
-    local target_h = 320
+    local input_names, output_names = get_session_tensor_names(session.session)
+    session.input_names = input_names
+    session.output_names = output_names
 
-    local input_buffer = u2net_resize_and_normalize(image_data, target_w, target_h)
-    local mem_info_out = ffi.new("OrtMemoryInfo*[1]")
-    check(state.api.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR, ORT_MEM_TYPE_DEFAULT, mem_info_out), "CreateCpuMemoryInfo")
-
-    local shape = ffi.new("int64_t[4]", 1, 3, target_h, target_w)
-    local input_value = ffi.new("OrtValue*[1]")
-    local input_data_len = ffi.sizeof("float") * target_w * target_h * 3
-    check(state.api.CreateTensorWithDataAsOrtValue(mem_info_out[0], ffi.cast("void*", input_buffer),
-        input_data_len, shape, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, input_value), "CreateTensorWithDataAsOrtValue")
-
-    local input_name = session.input_names and session.input_names[1]
-    local output_name = session.output_names and session.output_names[1]
-    if input_name == nil or output_name == nil then
-        local input_names, output_names = get_session_tensor_names(session.session)
-        session.input_names = input_names
-        session.output_names = output_names
-        input_name = input_names[1]
-        output_name = output_names[1]
-    end
-    print("U2Net tensors: input=`" .. tostring(input_name) .. "`, output=`" .. tostring(output_name) .. "`")
-
+    local input_name = input_names[1]
+    local output_name = output_names[1]
     if input_name == nil or output_name == nil then
         error("ONNX Runtime session does not expose input/output tensor names", 2)
     end
+
+    local shape = get_session_input_shape(session, input_name)
+    local target_w, target_h, channel_count = infer_model_input_size(shape)
+    if target_w <= 0 or target_h <= 0 then
+        target_w, target_h, channel_count = 320, 320, 3
+    end
+
+    local src_w = image_data:getWidth()
+    local src_h = image_data:getHeight()
+
+    if channel_count < 1 then
+        channel_count = 3
+    end
+
+    local input_buffer = resize_and_normalize(image_data, target_w, target_h, channel_count)
+    local mem_info_out = ffi.new("OrtMemoryInfo*[1]")
+    check(state.api.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR, ORT_MEM_TYPE_DEFAULT, mem_info_out),
+            "CreateCpuMemoryInfo")
+
+    local shape_array = ffi.new("int64_t[4]", 1, channel_count, target_h, target_w)
+    local input_value = ffi.new("OrtValue*[1]")
+    local input_data_len = ffi.sizeof("float") * target_w * target_h * channel_count
+    check(state.api.CreateTensorWithDataAsOrtValue(mem_info_out[0], ffi.cast("void*", input_buffer),
+        input_data_len, shape_array, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, input_value),
+        "CreateTensorWithDataAsOrtValue")
 
     local input_name_cstr = to_c_string(input_name)
     local output_name_cstr = to_c_string(output_name)
@@ -607,7 +727,6 @@ function Onnx.remove_background(session, image_or_data)
 
     local output_mask = ffi.cast("float*", raw_output[0])
     local output_dims, output_element_count = get_value_shape(output_tensors_ptr[0])
-    print("U2Net output shape: " .. table.concat(output_dims, "x"))
     local mask_w, mask_h = resolve_mask_dimensions(output_dims, output_element_count)
 
     local output_image_data = love.image.newImageData(src_w, src_h)
@@ -623,8 +742,7 @@ function Onnx.remove_background(session, image_or_data)
             max_value = mask_value
         end
     end
-
-    print(string.format("U2Net mask range: min=%.6f max=%.6f", min_value, max_value))
+    print(string.format("Mask value range: min=%f, max=%f", min_value, max_value))
 
     for y = 0, src_h - 1 do
         local mask_y = math.min(mask_h - 1, math.floor((y + 0.5) * mask_h / src_h))
@@ -634,9 +752,22 @@ function Onnx.remove_background(session, image_or_data)
             local alpha = normalize_mask_value(output_mask[mask_index], min_value, max_value)
 
             local r, g, b, a = image_data:getPixel(x, y)
-            output_image_data:setPixel(x, y, r, g, b, alpha * a)
+            local alpha_mask = alpha >= threshold and 1 or 0
+            output_image_data:setPixel(x, y,
+                r and alpha_mask == 1 and r or 0,
+                g and alpha_mask == 1 and g or 0,
+                b and alpha_mask == 1 and b or 0, alpha_mask)
         end
     end
+
+    local r, g, b, a = image_data:getPixel(0, 0)
+    print(string.format("Top-left pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
+            r * 255, g * 255, b * 255, a * 255, a))
+    r, g, b, a = image_data:getPixel(src_w / 2 + 1, src_h / 2 + 1)
+    print(string.format("Center pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
+            r * 255, g * 255, b * 255, a * 255, a))
+
+
 
     return love.graphics.newImage(output_image_data)
 end
