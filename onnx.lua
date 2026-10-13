@@ -217,7 +217,7 @@ local ORT_MEM_TYPE_DEFAULT = 0
 local ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT = 1
 local CP_UTF8 = 65001
 local NULL = ffi.cast("void*", 0)
-local DLL_path = nil;
+-- local DLL_path = nil;
 
 local Onnx = {
     available = false,
@@ -225,7 +225,7 @@ local Onnx = {
     load_error = nil,
 }
 
-local state = {
+local State = {
     initialized = false,
     ort = nil, -- The loaded ONNX Runtime DLL object
     api_base = nil, -- The base API object for ONNX Runtime
@@ -252,12 +252,12 @@ local function check(status, action)
         return
     end
 
-    if state.api == nil or type(state.api.GetErrorCode) ~= "function" or type(state.api.GetErrorMessage) ~= "function" then
+    if State.api == nil or type(State.api.GetErrorCode) ~= "function" or type(State.api.GetErrorMessage) ~= "function" then
         error(string.format("ONNX Runtime %s failed, but the API table is unavailable or incomplete", action), 2)
     end
 
-    local err_code = tonumber(state.api.GetErrorCode(status)) or -1
-    local err_ptr = state.api.GetErrorMessage(status)
+    local err_code = tonumber(State.api.GetErrorCode(status)) or -1
+    local err_ptr = State.api.GetErrorMessage(status)
     local err_msg = err_ptr ~= nil and ffi.string(err_ptr) or "Unknown ONNX Runtime error"
     error(string.format("ONNX Runtime %s failed (code %d): %s", action, err_code, err_msg), 2)
 end
@@ -288,47 +288,45 @@ end
 --- @return nil # Returns the ONNX Runtime API object if initialization is successful, otherwise nil
 --- @return table # Returns state containing the initialization status and API references
 function Onnx.init(runtime_path)
-    DLL_path = runtime_path or "misc/onnxruntime"
-    if state.initialized then -- already initialized
-        return state.api, state
+    if State.initialized then -- already initialized
+        return State.api, State
     end
 
-    state.initialized = true
-
-    local ok, ort_or_err = pcall(ffi.load, DLL_path)
+    local ok, ort = pcall(ffi.load, runtime_path)
     if not ok then
-        state.load_error = "onnxruntime: Failed to load " .. DLL_path .. ".dll: " .. tostring(ort_or_err)
-        print(state.load_error)
-        Onnx.load_error = state.load_error
-        return nil, state
+        State.load_error = "onnxruntime: Failed to load " .. runtime_path .. ".dll"
+        print(State.load_error)
+        Onnx.load_error = State.load_error
+        return nil, State
     end
 
-    print("Loaded '" .. DLL_path .. ".dll' library")
+    print("Loaded '" .. runtime_path .. ".dll' library")
 
-    state.ort = ort_or_err
+    State.ort = ort
 
-    local api_base_ptr = state.ort.OrtGetApiBase()
+    local api_base_ptr = State.ort.OrtGetApiBase()
     if api_base_ptr == nil or api_base_ptr == NULL then
-        state.load_error = "onnxruntime: OrtGetApiBase returned NULL"
-        Onnx.load_error = state.load_error
-        return nil, state
+        State.load_error = "onnxruntime: OrtGetApiBase returned NULL"
+        Onnx.load_error = State.load_error
+        return nil, State
     end
 
-    state.api_base = api_base_ptr[0]
+    State.api_base = api_base_ptr[0]
 
-    local api_ptr = state.api_base.GetApi(ORT_API_VERSION)
+    local api_ptr = State.api_base.GetApi(ORT_API_VERSION)
     if api_ptr == nil or api_ptr == NULL then
-        state.load_error = "onnxruntime: onnxruntime.dll does not support ORT_API_VERSION " .. ORT_API_VERSION
-        Onnx.load_error = state.load_error
-        return nil, state
+        State.load_error = "onnxruntime: onnxruntime.dll does not support ORT_API_VERSION " .. ORT_API_VERSION
+        Onnx.load_error = State.load_error
+        return nil, State
     end
 
-    state.api = api_ptr[0]
-    Onnx.runtime_version = ffi.string(state.api_base.GetVersionString())
+    State.api = api_ptr[0]
+    Onnx.runtime_version = ffi.string(State.api_base.GetVersionString())
     Onnx.available = true
+    State.initialized = true
 
     print("ONNX Runtime initialized successfully, version: " .. Onnx.runtime_version)
-    return state.api, state
+    return State.api, State
 end
 
 
@@ -342,14 +340,14 @@ function Onnx.create_env(log_id, severity)
         error(err, 2)
     end
 
-    if state.env ~= nil and state.env[0] ~= nil and state.env[0] ~= NULL then
-        return state.env[0]
+    if State.env ~= nil and State.env[0] ~= nil and State.env[0] ~= NULL then
+        return State.env[0]
     end
 
     local env_out = ffi.new("OrtEnv*[1]")
     check(api.CreateEnv(severity or ORT_LOGGING_LEVEL_WARNING, log_id or "Love2D", env_out),
         "CreateEnv")
-    state.env = env_out
+    State.env = env_out
 
     print("ONNX Runtime environment created successfully")
     return env_out[0]
@@ -409,13 +407,13 @@ end
 --- Returns the cached default allocator or creates it on first use.
 --- @return userdata # Default ONNX Runtime allocator handle.
 local function get_default_allocator()
-    if state.default_allocator ~= nil and state.default_allocator[0] ~= nil and state.default_allocator[0] ~= NULL then
-        return state.default_allocator[0]
+    if State.default_allocator ~= nil and State.default_allocator[0] ~= nil and State.default_allocator[0] ~= NULL then
+        return State.default_allocator[0]
     end
 
     local allocator_out = ffi.new("OrtAllocator*[1]")
-    check(state.api.GetAllocatorWithDefaultOptions(allocator_out), "GetAllocatorWithDefaultOptions")
-    state.default_allocator = allocator_out
+    check(State.api.GetAllocatorWithDefaultOptions(allocator_out), "GetAllocatorWithDefaultOptions")
+    State.default_allocator = allocator_out
     return allocator_out[0]
 end
 
@@ -430,13 +428,13 @@ local function get_session_name(session_ptr, index, is_input)
     local name_out = ffi.new("char*[1]")
 
     if is_input then
-        check(state.api.SessionGetInputName(session_ptr, index, allocator, name_out), "SessionGetInputName")
+        check(State.api.SessionGetInputName(session_ptr, index, allocator, name_out), "SessionGetInputName")
     else
-        check(state.api.SessionGetOutputName(session_ptr, index, allocator, name_out), "SessionGetOutputName")
+        check(State.api.SessionGetOutputName(session_ptr, index, allocator, name_out), "SessionGetOutputName")
     end
 
     local name = ffi.string(name_out[0])
-    check(state.api.AllocatorFree(allocator, name_out[0]), "AllocatorFree")
+    check(State.api.AllocatorFree(allocator, name_out[0]), "AllocatorFree")
     return name
 end
 
@@ -448,8 +446,8 @@ end
 local function get_session_tensor_names(session_ptr)
     local input_count = ffi.new("size_t[1]")
     local output_count = ffi.new("size_t[1]")
-    check(state.api.SessionGetInputCount(session_ptr, input_count), "SessionGetInputCount")
-    check(state.api.SessionGetOutputCount(session_ptr, output_count), "SessionGetOutputCount")
+    check(State.api.SessionGetInputCount(session_ptr, input_count), "SessionGetInputCount")
+    check(State.api.SessionGetOutputCount(session_ptr, output_count), "SessionGetOutputCount")
 
     local input_names = {}
     for i = 0, tonumber(input_count[0]) - 1 do
@@ -521,23 +519,23 @@ end
 --- @return number # Total number of elements in the tensor.
 local function get_value_shape(value)
     local shape_info_out = ffi.new("OrtTensorTypeAndShapeInfo*[1]")
-    check(state.api.GetTensorTypeAndShape(value, shape_info_out), "GetTensorTypeAndShape")
+    check(State.api.GetTensorTypeAndShape(value, shape_info_out), "GetTensorTypeAndShape")
 
     local dims_count_out = ffi.new("size_t[1]")
-    check(state.api.GetDimensionsCount(shape_info_out[0], dims_count_out), "GetDimensionsCount")
+    check(State.api.GetDimensionsCount(shape_info_out[0], dims_count_out), "GetDimensionsCount")
 
     local dims_count = tonumber(dims_count_out[0])
     local dims = {}
     if dims_count > 0 then
         local dims_buffer = ffi.new("int64_t[?]", dims_count)
-        check(state.api.GetDimensions(shape_info_out[0], dims_buffer, dims_count), "GetDimensions")
+        check(State.api.GetDimensions(shape_info_out[0], dims_buffer, dims_count), "GetDimensions")
         for i = 0, dims_count - 1 do
             dims[#dims + 1] = tonumber(dims_buffer[i])
         end
     end
 
     local element_count_out = ffi.new("size_t[1]")
-    check(state.api.GetTensorShapeElementCount(shape_info_out[0], element_count_out), "GetTensorShapeElementCount")
+    check(State.api.GetTensorShapeElementCount(shape_info_out[0], element_count_out), "GetTensorShapeElementCount")
     print(string.format("Tensor element count: %d", tonumber(element_count_out[0]) or 0))
     return dims, tonumber(element_count_out[0]) or 0
 end
@@ -638,32 +636,32 @@ local function get_session_input_shape(session_or_ptr, input_name)
     end
 
     local input_count = ffi.new("size_t[1]")
-    check(state.api.SessionGetInputCount(session_ptr, input_count), "SessionGetInputCount")
+    check(State.api.SessionGetInputCount(session_ptr, input_count), "SessionGetInputCount")
 
     for i = 0, tonumber(input_count[0]) - 1 do
         local name = get_session_name(session_ptr, i, true)
         if name == input_name then
             local type_info = ffi.new("OrtTypeInfo*[1]")
-            check(state.api.SessionGetInputTypeInfo(session_ptr, i, type_info), "SessionGetInputTypeInfo")
+            check(State.api.SessionGetInputTypeInfo(session_ptr, i, type_info), "SessionGetInputTypeInfo")
 
             local tensor_info = ffi.new("const OrtTensorTypeAndShapeInfo*[1]")
-            check(state.api.CastTypeInfoToTensorInfo(type_info[0], tensor_info), "CastTypeInfoToTensorInfo")
+            check(State.api.CastTypeInfoToTensorInfo(type_info[0], tensor_info), "CastTypeInfoToTensorInfo")
 
             local dims_count_out = ffi.new("size_t[1]")
-            check(state.api.GetDimensionsCount(tensor_info[0], dims_count_out), "GetDimensionsCount")
+            check(State.api.GetDimensionsCount(tensor_info[0], dims_count_out), "GetDimensionsCount")
 
             local dims_count = tonumber(dims_count_out[0])
             local dims = {}
             if dims_count > 0 then
                 local dims_buffer = ffi.new("int64_t[?]", dims_count)
-                check(state.api.GetDimensions(tensor_info[0], dims_buffer, dims_count), "GetDimensions")
+                check(State.api.GetDimensions(tensor_info[0], dims_buffer, dims_count), "GetDimensions")
                 for idx = 0, dims_count - 1 do
                     dims[#dims + 1] = tonumber(dims_buffer[idx])
                 end
             end
 
-            if type_info[0] ~= nil and type_info[0] ~= NULL and state.api.ReleaseTypeInfo ~= nil then
-                check(state.api.ReleaseTypeInfo(type_info[0]), "ReleaseTypeInfo")
+            if type_info[0] ~= nil and type_info[0] ~= NULL and State.api.ReleaseTypeInfo ~= nil then
+                check(State.api.ReleaseTypeInfo(type_info[0]), "ReleaseTypeInfo")
             end
             -- if tensor_info[0] ~= nil and tensor_info[0] ~= NULL and state.api.ReleaseTensorTypeAndShapeInfo ~= nil then
             --     check(state.api.ReleaseTensorTypeAndShapeInfo(tensor_info[0]), "ReleaseTensorTypeAndShapeInfo") -- TODO
@@ -726,13 +724,13 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
 
     local input_buffer = resize_and_normalize(image_data, target_w, target_h, channel_count)
     local mem_info_out = ffi.new("OrtMemoryInfo*[1]")
-    check(state.api.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR, ORT_MEM_TYPE_DEFAULT, mem_info_out),
+    check(State.api.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR, ORT_MEM_TYPE_DEFAULT, mem_info_out),
             "CreateCpuMemoryInfo")
 
     local shape_array = ffi.new("int64_t[4]", 1, channel_count, target_h, target_w)
     local input_value = ffi.new("OrtValue*[1]")
     local input_data_len = ffi.sizeof("float") * target_w * target_h * channel_count
-    check(state.api.CreateTensorWithDataAsOrtValue(mem_info_out[0], ffi.cast("void*", input_buffer),
+    check(State.api.CreateTensorWithDataAsOrtValue(mem_info_out[0], ffi.cast("void*", input_buffer),
         input_data_len, shape_array, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, input_value),
         "CreateTensorWithDataAsOrtValue")
 
@@ -744,7 +742,7 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
     local output_tensors_ptr = ffi.new("OrtValue*[1]")
     output_tensors_ptr[0] = NULL
 
-    check(state.api.Run(session.session, NULL, input_name_ptr, input_tensors_ptr, 1, output_name_ptr, 1,
+    check(State.api.Run(session.session, NULL, input_name_ptr, input_tensors_ptr, 1, output_name_ptr, 1,
         output_tensors_ptr), "Run")
 
     if output_tensors_ptr[0] == NULL then
@@ -752,7 +750,7 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
     end
 
     local raw_output = ffi.new("void*[1]")
-    check(state.api.GetTensorMutableData(output_tensors_ptr[0], raw_output), "GetTensorMutableData")
+    check(State.api.GetTensorMutableData(output_tensors_ptr[0], raw_output), "GetTensorMutableData")
 
     local output_mask = ffi.cast("float*", raw_output[0])
     local output_dims, output_element_count = get_value_shape(output_tensors_ptr[0])
@@ -796,14 +794,14 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
     print(string.format("Center pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
             r * 255, g * 255, b * 255, a * 255, a))
 
-    if input_value[0] ~= nil and input_value[0] ~= NULL and state.api.ReleaseValue ~= nil then
-        check(state.api.ReleaseValue(input_value[0]), "ReleaseValue")
+    if input_value[0] ~= nil and input_value[0] ~= NULL and State.api.ReleaseValue ~= nil then
+        check(State.api.ReleaseValue(input_value[0]), "ReleaseValue")
         input_value[0] = NULL
     else
         print("Input value was not released because it is nil or already NULL")
     end
-    if output_tensors_ptr[0] ~= nil and output_tensors_ptr[0] ~= NULL and state.api.ReleaseValue ~= nil then
-        check(state.api.ReleaseValue(output_tensors_ptr[0]), "ReleaseValue")
+    if output_tensors_ptr[0] ~= nil and output_tensors_ptr[0] ~= NULL and State.api.ReleaseValue ~= nil then
+        check(State.api.ReleaseValue(output_tensors_ptr[0]), "ReleaseValue")
         output_tensors_ptr[0] = NULL
     else
         print("Output tensors pointer was not released because it is nil or already NULL")

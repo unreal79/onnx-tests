@@ -19,8 +19,8 @@ local IMAGE_PATH = "assets/parrot.png"
 local img_parrot = lg.newImage(IMAGE_PATH)
 -- local img_parrot_data = love.image.newImageData("assets/parrot.png")
 local img_no_background = nil
--- local MODEL_PATH = "models/u2net.onnx" -- u2netp, u2net, birefnet-lite-512
-local MODEL_PATH = "models/birefnet-lite-512.onnx" -- u2netp, u2net, birefnet-lite-512
+local MODEL_PATH = "models/u2net.onnx" -- u2netp, u2net, birefnet-lite-512
+-- local MODEL_PATH = "models/birefnet-lite-512.onnx" -- u2netp, u2net, birefnet-lite-512
 local THRESHOLD = 0.25
 local processing_start_time = nil
 local last_elapsed_seconds = nil
@@ -47,7 +47,7 @@ local function start_background_removal()
 
     processing_start_time = love.timer.getTime()
     last_elapsed_seconds = nil
-    print_to_screen("Removing background in a worker thread...")
+    print_to_screen("Started background removal in a worker thread...")
 end
 
 
@@ -79,9 +79,9 @@ function love.update(dt)
 
     if processing_start_time then
         local elapsed_seconds = math.floor(love.timer.getTime() - processing_start_time)
-        if last_elapsed_seconds ~= elapsed_seconds then
+        if last_elapsed_seconds ~= elapsed_seconds and elapsed_seconds > 0 then
             last_elapsed_seconds = elapsed_seconds
-            print_to_screen(string.format("  Background removal timer: %d seconds", elapsed_seconds))
+            print_to_screen(string.format("  [Timer]: %d seconds", elapsed_seconds))
         end
     end
 
@@ -101,7 +101,7 @@ function love.update(dt)
         end
     elseif last_message and last_message:match("^remove_background_error:") then
         local error_text = last_message:sub(#"remove_background_error:" + 1)
-        print_to_screen("Background removal failed: " .. error_text)
+        print_to_screen("Background removal failed: " .. tostring(error_text))
         processing_start_time = nil
         last_elapsed_seconds = nil
     end

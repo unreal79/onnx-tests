@@ -55,8 +55,7 @@ local function worker1_onnx_remove_background(step, command)
 
         send_status("remove_background_start") -- hardcoded
 
-        local filedata = nil
-        -- local ok, filedata = pcall(function()
+        local ok, filedata = xpcall(function()
             local Onnx = require("onnx")
             local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
             if not onnx_api then
@@ -65,24 +64,16 @@ local function worker1_onnx_remove_background(step, command)
 
             local session = Onnx.create_session(model_path)
             if not session or not session.session then
-                error((session and session.message) or "Failed to create ONNX session")
+                error((session and tostring(session.message)) or "Failed to create ONNX session")
             end
+            print(session.message)
 
             local image_data = love.image.newImageData(image_path)
             local output_image_data = Onnx.remove_background(session, image_data, threshold, true)
-            -- local output_path = image_path:gsub("%.([^.]+)$", "_no_background.%1")
-            local encoded_FileData, encode_error = pcall(function()
-                -- print("Encoding and saving output image to: `" .. tostring(output_path) .. "`")
-                -- return output_image_data:encode("png", nil) --output_path)
-                filedata = output_image_data:encode("png", nil)
-            end)
-            if not encoded_FileData then
-                error(encode_error or "Failed to encode processed image")
-            end
-        --     return encoded_FileData --output_path
-        -- end)--, debug.traceback)
+            return output_image_data:encode("png", nil)
+        end, debug.traceback)
 
-        if filedata then
+        if ok then
             local base64_encoded_FileData = love.data.encode("string", "base64", filedata)
             send_status("remove_background_done:" .. base64_encoded_FileData) -- hardcoded message
         else
