@@ -17,6 +17,7 @@ ffi.cdef([[
     typedef unsigned int UINT;
     typedef unsigned short WORD;
     typedef unsigned long DWORD;
+    typedef unsigned __int64 SIZE_T;
     typedef long LONG;
     typedef int BOOL;
     typedef struct {
@@ -32,19 +33,29 @@ ffi.cdef([[
         DWORD biClrUsed;
         DWORD biClrImportant;
     } BITMAPINFOHEADER;
+    typedef struct {
+        DWORD cb;
+        DWORD PageFaultCount;
+        SIZE_T PeakWorkingSetSize;
+        SIZE_T WorkingSetSize;
+        SIZE_T QuotaPeakPagedPoolUsage;
+        SIZE_T QuotaPagedPoolUsage;
+        SIZE_T QuotaPeakNonPagedPoolUsage;
+        SIZE_T QuotaNonPagedPoolUsage;
+        SIZE_T PagefileUsage;
+        SIZE_T PeakPagefileUsage;
+    } PROCESS_MEMORY_COUNTERS;
+    HANDLE GetCurrentProcess(void);
+    BOOL K32GetProcessMemoryInfo(
+        HANDLE hProcess,
+        PROCESS_MEMORY_COUNTERS *ppsmemCounters,
+        DWORD cb
+    );
     int MultiByteToWideChar(unsigned int CodePage, unsigned long dwFlags,
         const char* lpMultiByteStr, int cbMultiByte, wchar_t* lpWideCharStr, int cchWideChar);
     int WideCharToMultiByte(unsigned int CodePage, unsigned long dwFlags,
         const wchar_t* lpWideCharStr, int cchWideChar, char* lpMultiByteStr, int cbMultiByte,
         const char* lpDefaultChar, int* lpUsedDefaultChar);
-    BOOL OpenClipboard(HWND hWndNewOwner);
-    BOOL CloseClipboard(void);
-    BOOL EmptyClipboard(void);
-    HANDLE SetClipboardData(UINT uFormat, HANDLE hMem);
-    HGLOBAL GlobalAlloc(UINT uFlags, size_t dwBytes);
-    void* GlobalLock(HGLOBAL hMem);
-    BOOL GlobalUnlock(HGLOBAL hMem);
-    HGLOBAL GlobalFree(HGLOBAL hMem);
 ]])
 
 ffi_null = ffi.cast("void*", 0) -- null pointer
@@ -194,6 +205,25 @@ function collect_garbage()
 end
 
 
+--- Returns the current process memory usage in megabytes.
+--- @return number|nil working_set # the working set size in MB, or nil if failed
+--- @return number|nil commit_size # the commit size in MB, or nil if failed
+function get_memory_usage()
+    local pmc = ffi.new("PROCESS_MEMORY_COUNTERS[1]")
+    pmc[0].cb = ffi.sizeof("PROCESS_MEMORY_COUNTERS")
+
+    local success = ffi.C.K32GetProcessMemoryInfo(ffi.C.GetCurrentProcess(),pmc,
+            ffi.sizeof("PROCESS_MEMORY_COUNTERS"))
+    if success ~= 0 then
+        local working_set = tonumber(pmc[0].WorkingSetSize) / 1024 / 1024
+        local commit_size = tonumber(pmc[0].PagefileUsage) / 1024 / 1024
+        return working_set, commit_size
+    end
+
+    return nil, nil
+end
+
+
 local print_table_was_run_times = 0
 -- prints contents of a table (for debugging)
 --- @param t table table to print
@@ -253,8 +283,6 @@ function print_to_screen(text, not_print_to_console)
     end
 
     print_to_screen_lines[#print_to_screen_lines + 1] = text
-    lg.setFont(font_mplusrounded14)
-    lg.setColor(0.75, 0.75, 0.75, 1)
 
     local w, h = lg.getDimensions()
     local line_height = font_mplusrounded14:getHeight()
@@ -262,6 +290,9 @@ function print_to_screen(text, not_print_to_console)
     if #print_to_screen_lines >= max_lines then
         table.remove(print_to_screen_lines, 1) -- remove oldest line if exceeding max_lines
     end
+
+    lg.setFont(font_mplusrounded14)
+    lg.setColor(1, 1, 1, 1)
 
     local i = 1
     for _, line in ipairs(print_to_screen_lines) do
