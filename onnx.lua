@@ -217,7 +217,6 @@ local ORT_MEM_TYPE_DEFAULT = 0
 local ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT = 1
 local CP_UTF8 = 65001
 local NULL = ffi.cast("void*", 0)
--- local DLL_path = nil;
 
 local Onnx = {
     available = false,

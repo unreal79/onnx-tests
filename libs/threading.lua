@@ -24,10 +24,6 @@ end
 --- @param worker_id number # worker identifier, expected values are 1 or 2
 --- @return table|nil, string|nil # worker state table or nil if invalid worker_id, error message if invalid
 local function get_worker_state(worker_id)
-    if worker_id ~= 1 and worker_id ~= 2 then
-        return nil, "Invalid worker id: " .. tostring(worker_id)
-    end
-
     local state = Workers[worker_id]
     if state then
         return state, nil
@@ -48,7 +44,7 @@ end
 
 
 -- Checks whether the worker thread is currently running
---- @param state table|nil # worker state table
+--- @param state table # worker state table
 --- @return boolean # true if the worker thread is running, false otherwise
 local function is_running(state)
     return state and state.thread and state.thread:isRunning() or false
@@ -180,6 +176,7 @@ function Threading.is_running(worker_id)
     local state = Workers[worker_id]
     return is_running(state)
 end
+
 
 -- Returns whether a worker thread is currently paused
 --- @param worker_id number # worker identifier, expected values are 1 or 2

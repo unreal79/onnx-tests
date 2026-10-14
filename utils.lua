@@ -212,7 +212,7 @@ function get_memory_usage()
     local pmc = ffi.new("PROCESS_MEMORY_COUNTERS[1]")
     pmc[0].cb = ffi.sizeof("PROCESS_MEMORY_COUNTERS")
 
-    local success = ffi.C.K32GetProcessMemoryInfo(ffi.C.GetCurrentProcess(),pmc,
+    local success = ffi.C.K32GetProcessMemoryInfo(ffi.C.GetCurrentProcess(), pmc,
             ffi.sizeof("PROCESS_MEMORY_COUNTERS"))
     if success ~= 0 then
         local working_set = tonumber(pmc[0].WorkingSetSize) / 1024 / 1024
@@ -227,7 +227,7 @@ end
 local print_table_was_run_times = 0
 -- prints contents of a table (for debugging)
 --- @param t table table to print
---- @param run_times integer|nil , limits number of times the function can be
+--- @param run_times integer|nil # limits number of times the function can be
 -- run (to avoid very big output or infinite loops with recursive tables)
 function print_table(t, run_times)
     if run_times ~= nil then

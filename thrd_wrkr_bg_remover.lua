@@ -28,11 +28,11 @@ end
 
 
 -- WARNING: CRASHES thread without error
--- local font_neucha40 = love.graphics.newFont("assets/fonts/Neucha-Regular.ttf", 40)
--- local img_a, err = pcall(love.graphics.newImage, "assets/pics/bonfire.png")
--- print("img_a: " .. tostring(img_a) .. " " .. tostring(err))
+-- local font_neucha40 = love.graphics.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 40)
+local img_a = love.graphics.newImage("assets/parrot.png")
+print("Worker " .. tostring(worker_id) .. " started")
 
--- Worker thread function 1:
+-- Worker thread function 1: Remove background
 --- @param step number # current iteration number
 --- @param command string # last received command
 local function worker1_onnx_remove_background(step, command)
@@ -93,7 +93,7 @@ local Functions = {
     [1] = worker1_onnx_remove_background,
 }
 
-if worker_id ~= 1 then
+if Functions[worker_id] == nil then
     send_status("invalid worker id")
     error("Invalid worker id: " .. tostring(worker_id))
     return

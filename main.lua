@@ -11,12 +11,12 @@ io.popen("chcp 65001")
 require("libs.errorhandler")
 utf8 = require("utf8")
 Onnx = require("onnx")
-Threading = require("libs.threading.threading")
+Threading = require("libs.threading")
 require("utils")
 
 font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
 
-local WORKER_FILE = "thrd_wrkr_bg_remover.lua"
+local WORKER_FILE = "thrd_wrkr_bg_remover.lua" -- thread worker
 local IMAGE_PATH = "assets/parrot.png"
 local img_parrot = lg.newImage(IMAGE_PATH)
 local img_no_background = nil
@@ -56,7 +56,6 @@ end
 
 function love.load()
     math.randomseed( os.time() )
-    lg.setFont(font_mplusrounded14)
 
     print_to_screen("Love2D loaded")
     local working_set, commit_size = get_memory_usage()
@@ -83,6 +82,9 @@ function love.update(dt)
             end
             print_to_screen(string.format("  [Timer]: %d seconds. Memory usage - RAM: %d " ..
                 "MB, Virtual: %d MB", elapsed_seconds, working_set, commit_size))
+            if not Threading.is_running(1) then
+                print_to_screen("Worker thread 1 is not running")
+            end
         end
     end
 
@@ -108,6 +110,7 @@ function love.update(dt)
         processing_start_time = nil
         last_elapsed_seconds = nil
     end
+    Threading.shutdown()
 end
 
 
