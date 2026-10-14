@@ -208,6 +208,7 @@ end
 --- Returns the current process memory usage in megabytes.
 --- @return number|nil working_set # the working set size in MB, or nil if failed
 --- @return number|nil commit_size # the commit size in MB, or nil if failed
+--- @return number|nil peak_working_set # the peak working set size in MB, or nil if failed
 function get_memory_usage()
     local pmc = ffi.new("PROCESS_MEMORY_COUNTERS[1]")
     pmc[0].cb = ffi.sizeof("PROCESS_MEMORY_COUNTERS")
@@ -217,10 +218,11 @@ function get_memory_usage()
     if success ~= 0 then
         local working_set = tonumber(pmc[0].WorkingSetSize) / 1024 / 1024
         local commit_size = tonumber(pmc[0].PagefileUsage) / 1024 / 1024
-        return working_set, commit_size
+        local peak_working_set = tonumber(pmc[0].PeakWorkingSetSize) / 1024 / 1024
+        return working_set, commit_size, peak_working_set
     end
 
-    return nil, nil
+    return nil, nil, nil
 end
 
 

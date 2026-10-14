@@ -245,8 +245,9 @@ function Threading.update()
         if state.thread then
             if not state.thread:isRunning() then
                 mark_crashed(state)
-            elseif not state.has_started and love.timer.getTime() - state.started_at > 2 then
-                mark_crashed(state)
+            -- elseif not state.has_started and love.timer.getTime() - state.started_at > 2 then
+            ---- gives false positives
+            --     mark_crashed(state)
             elseif state.has_started and state.last_status_at > 0 and
                     love.timer.getTime() - state.last_status_at > 3 then
                 mark_crashed(state)

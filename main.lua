@@ -26,7 +26,6 @@ local THRESHOLD = 0.25
 
 local processing_start_time = nil
 local last_elapsed_seconds = nil
-local memory_peak = 0
 
 
 local function start_background_removal()
@@ -58,9 +57,10 @@ function love.load()
     math.randomseed( os.time() )
 
     print_to_screen("Love2D loaded")
-    local working_set, commit_size = get_memory_usage()
-    if working_set and commit_size then
-        print_to_screen(string.format("Memory usage - Working Set: %.2f MB, Commit Size: %.2f MB", working_set, commit_size))
+    local working_set, commit_size, peak_working_set = get_memory_usage()
+    if working_set and commit_size and peak_working_set then
+        print_to_screen(string.format("Memory usage - Working Set: %.2f MB, Commit " ..
+            "Size: %.2f MB, Peak Working Set: %.2f MB", working_set, commit_size, peak_working_set))
     else
         print_to_screen("Failed to get memory usage")
     end
@@ -85,23 +85,21 @@ function love.update(dt)
         local elapsed_seconds = math.floor(love.timer.getTime() - processing_start_time)
         if last_elapsed_seconds ~= elapsed_seconds and elapsed_seconds > 0 then -- once per second
             last_elapsed_seconds = elapsed_seconds
-            local working_set, commit_size = get_memory_usage()
-            if commit_size and commit_size > memory_peak then
-                memory_peak = commit_size
-            end
+            local working_set, commit_size, peak_working_set = get_memory_usage()
             print_to_screen(string.format("  [Timer]: %d seconds. Memory usage - RAM: %d " ..
                 "MB, Virtual: %d MB", elapsed_seconds, working_set, commit_size))
 
             local last_message = Threading.consume_last_message(1)
             if last_message and last_message:match("^remove_background_done:") then
-                local decoded_FileData = love.data.decode("data", "base64", last_message:sub(#"remove_background_done:" + 1))
+                local decoded_FileData = love.filesystem.newFileData(love.data.decode("data", "base64",
+                        last_message:sub(#"remove_background_done:" + 1)), "_")
                 img_no_background = lg.newImage(decoded_FileData)
                 print_to_screen("Background removed from image successfully")
                 print_to_screen(string.format("ONNX processing time: %.3f seconds",
                         love.timer.getTime() - processing_start_time))
-                local working_set, commit_size = get_memory_usage()
+                working_set, commit_size, peak_working_set = get_memory_usage()
                 print_to_screen(string.format("Memory usage - RAM: %d " ..
-                    "MB, Virtual: %d MB, Peak: %d MB", working_set, commit_size, memory_peak))
+                    "MB, Virtual: %d MB, Peak: %d MB", working_set, commit_size, peak_working_set))
 
                 processing_start_time = nil
                 last_elapsed_seconds = nil
