@@ -19,18 +19,14 @@ local is_paused = false
 local last_command = ""
 
 
+-- local img_a = love.graphics.newImage("assets/parrot.png") -- WARNING: crashes worker
+
 -- Pushes a status message from the worker thread to the main thread
 --- @param message string # status message to send
 local function send_status(message)
     -- print("Worker " .. tostring(worker_id) .. " status: " .. tostring(message))
     status_channel:push(message)
 end
-
-
--- WARNING: CRASHES thread without error
--- local font_neucha40 = love.graphics.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 40)
-local img_a = love.graphics.newImage("assets/parrot.png")
-print("Worker " .. tostring(worker_id) .. " started")
 
 -- Worker thread function 1: Remove background
 --- @param step number # current iteration number

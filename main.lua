@@ -20,8 +20,8 @@ local WORKER_FILE = "thrd_wrkr_bg_remover.lua" -- thread worker
 local IMAGE_PATH = "assets/parrot.png"
 local img_parrot = lg.newImage(IMAGE_PATH)
 local img_no_background = nil
--- local MODEL_PATH = "models/u2net.onnx" -- u2netp, u2net, birefnet-lite-512
-local MODEL_PATH = "models/birefnet-lite-512.onnx" -- u2netp, u2net, birefnet-lite-512
+local MODEL_PATH = "models/u2net.onnx" -- u2netp, u2net, birefnet-lite-512
+-- local MODEL_PATH = "models/birefnet-lite-512.onnx" -- u2netp, u2net, birefnet-lite-512
 local THRESHOLD = 0.25
 
 local processing_start_time = nil
@@ -73,6 +73,15 @@ function love.update(dt)
     Threading.update()
 
     if processing_start_time then
+        if Threading.has_crashed(1) then
+            print_to_screen("Worker thread 1 has crashed")
+            processing_start_time = nil
+            last_elapsed_seconds = nil
+            Threading.stop(1)
+            Threading.shutdown()
+            return
+        end
+
         local elapsed_seconds = math.floor(love.timer.getTime() - processing_start_time)
         if last_elapsed_seconds ~= elapsed_seconds and elapsed_seconds > 0 then -- once per second
             last_elapsed_seconds = elapsed_seconds
@@ -82,35 +91,29 @@ function love.update(dt)
             end
             print_to_screen(string.format("  [Timer]: %d seconds. Memory usage - RAM: %d " ..
                 "MB, Virtual: %d MB", elapsed_seconds, working_set, commit_size))
-            if not Threading.is_running(1) then
-                print_to_screen("Worker thread 1 is not running")
+
+            local last_message = Threading.consume_last_message(1)
+            if last_message and last_message:match("^remove_background_done:") then
+                local decoded_FileData = love.data.decode("data", "base64", last_message:sub(#"remove_background_done:" + 1))
+                img_no_background = lg.newImage(decoded_FileData)
+                print_to_screen("Background removed from image successfully")
+                print_to_screen(string.format("ONNX processing time: %.3f seconds",
+                        love.timer.getTime() - processing_start_time))
+                local working_set, commit_size = get_memory_usage()
+                print_to_screen(string.format("Memory usage - RAM: %d " ..
+                    "MB, Virtual: %d MB, Peak: %d MB", working_set, commit_size, memory_peak))
+
+                processing_start_time = nil
+                last_elapsed_seconds = nil
+                Threading.stop(1)
+            elseif last_message and last_message:match("^remove_background_error:") then
+                local error_text = last_message:sub(#"remove_background_error:" + 1)
+                print_to_screen("Background removal failed: " .. tostring(error_text))
+                processing_start_time = nil
+                last_elapsed_seconds = nil
             end
         end
     end
-
-    local last_message = Threading.consume_last_message(1)
-    if last_message and last_message:match("^remove_background_done:") then
-        local decoded_FileData = love.data.decode("data", "base64", last_message:sub(#"remove_background_done:" + 1))
-        img_no_background = lg.newImage(decoded_FileData)
-        print_to_screen("Background removed from image successfully")
-        print_to_screen(string.format("ONNX processing time: %.3f seconds",
-                love.timer.getTime() - processing_start_time))
-        local working_set, commit_size = get_memory_usage()
-        print_to_screen(string.format("Memory usage - RAM: %d " ..
-            "MB, Virtual: %d MB, Peak: %d MB", working_set, commit_size, memory_peak))
-
-        processing_start_time = nil
-        last_elapsed_seconds = nil
-        if Threading.is_running(1) then
-            Threading.stop(1)
-        end
-    elseif last_message and last_message:match("^remove_background_error:") then
-        local error_text = last_message:sub(#"remove_background_error:" + 1)
-        print_to_screen("Background removal failed: " .. tostring(error_text))
-        processing_start_time = nil
-        last_elapsed_seconds = nil
-    end
-    Threading.shutdown()
 end
 
 
