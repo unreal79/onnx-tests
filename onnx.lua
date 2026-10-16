@@ -1155,7 +1155,7 @@ function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile
     local y_positions = build_tile_positions(src_h, tile_size, tile_overlap)
 
     local runtime_input_w, runtime_input_h, channel_count = resolve_runtime_input_size(input_shape,
-        math.min(tile_size, src_w), math.min(tile_size, src_h))
+            math.min(tile_size, src_w), math.min(tile_size, src_h))
     if channel_count < 1 then
         channel_count = 3
     end
@@ -1167,25 +1167,27 @@ function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile
 
     for tile_y_index, tile_y in ipairs(y_positions) do
         local _, tile_src_end_y, owned_src_top, owned_src_bottom = resolve_tile_ownership(y_positions,
-            tile_y_index, src_h, tile_size)
+                tile_y_index, src_h, tile_size)
         local tile_h = tile_src_end_y - tile_y
         local owned_tile_top = owned_src_top - tile_y
 
         for tile_x_index, tile_x in ipairs(x_positions) do
+            print(string.format("Processing tile %d out of %d",
+                    (tile_y_index - 1) * #x_positions + tile_x_index, #x_positions * #y_positions))
             local _, tile_src_end_x, owned_src_left, owned_src_right = resolve_tile_ownership(x_positions,
-                tile_x_index, src_w, tile_size)
+                    tile_x_index, src_w, tile_size)
             local tile_w = tile_src_end_x - tile_x
             local owned_tile_left = owned_src_left - tile_x
 
             local tile_image_data = copy_image_region(image_data, tile_x, tile_y, tile_w, tile_h)
             local tile_input_buffer = resize_and_pack_rgb(tile_image_data, runtime_input_w, runtime_input_h,
-                channel_count)
+                    channel_count)
             local input_value, output_value, raw_output, output_dims, output_element_count =
                 run_single_output_session(session, input_name, output_name, tile_input_buffer, runtime_input_w,
-                    runtime_input_h, channel_count)
+                        runtime_input_h, channel_count)
 
             local tile_out_w, tile_out_h, output_channels, output_layout = resolve_image_tensor_layout(output_dims,
-                output_element_count)
+                    output_element_count)
 
             if scale_x == nil or scale_y == nil then
                 scale_x = tile_out_w / tile_w
@@ -1240,6 +1242,7 @@ function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile
             release_ort_value(output_value)
         end
     end
+    print(string.format("Final output image size: %dx%d", output_image_data:getWidth(), output_image_data:getHeight()))
 
     if output_image_data == nil then
         error("Upscale did not produce any output tiles", 2)

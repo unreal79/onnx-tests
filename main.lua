@@ -16,15 +16,15 @@ require("utils")
 
 font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
 
-local WORKER_FILE = "thrd_wrkr_bg_remover.lua" -- thread worker
+local THREAD_WORKER_PATH = "thread_worker.lua"
 local IMAGE_PATH = "assets/parrot.png"
 local img_parrot = lg.newImage(IMAGE_PATH)
 local img_upscaled = nil
 local img_no_background = nil
--- local MODEL_UPSCALER_PATH = "models/4x-ClearRealityV1.onnx"
-local MODEL_UPSCALER_PATH = "models/1x-Kim2091-DeJpeg-v0.onnx"
-local MODEL_BG_REMOVER_PATH = "models/u2net.onnx"
--- local MODEL_BG_REMOVER_PATH = "models/birefnet-lite-512.onnx"
+local MODEL_UPSCALER_PATH = "models/4x-ClearRealityV1.onnx" -- 7 sec
+-- local MODEL_UPSCALER_PATH = "models/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec
+-- local MODEL_BG_REMOVER_PATH = "models/u2net.onnx" -- 4 sec
+local MODEL_BG_REMOVER_PATH = "models/birefnet-lite-512.onnx" --
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
 
 local processing_start_time = nil
@@ -37,7 +37,7 @@ local function start_background_removal()
         return
     end
 
-    local ok, err = Threading.run(WORKER_FILE, 1)
+    local ok, err = Threading.run(THREAD_WORKER_PATH, 1)
     if not ok then
         print_to_screen("Failed to start the worker thread: " .. tostring(err))
         return
@@ -57,39 +57,65 @@ local function start_background_removal()
 end
 
 local function start_upscale()
-    print_to_screen("Starting ONNX upscale on the main thread...")
-    local processing_start_time = love.timer.getTime()
-
-    local ok, result_or_err = xpcall(function()
-        local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
-        if not onnx_api then
-            error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
+    local USE_THREADING = true
+    if USE_THREADING then
+        if Threading.is_running(2) then
+            print_to_screen("Upscale is already running")
+            return
         end
 
-        local session = Onnx.create_session(MODEL_UPSCALER_PATH)
-        if not session or not session.session then
-            error((session and tostring(session.message)) or "Failed to create ONNX session")
+        local ok, err = Threading.run(THREAD_WORKER_PATH, 2)
+        if not ok then
+            print_to_screen("Failed to start the worker thread: " .. tostring(err))
+            return
         end
-        print(session.message)
 
-        local image_data = love.image.newImageData(IMAGE_PATH)
-        return Onnx.upscale(session, image_data)
-    end, debug.traceback)
+        local command = string.format("upscale|%s|%s", MODEL_UPSCALER_PATH, IMAGE_PATH)
+        ok, err = Threading.command(2, command)
+        if not ok then
+            print_to_screen("Failed to queue upscale: " .. tostring(err))
+            return
+        end
 
-    if not ok then
-        print_to_screen("Upscale failed: " .. tostring(result_or_err))
-        return
-    end
+        processing_start_time = love.timer.getTime()
+        last_elapsed_seconds = nil
+        print_to_screen("Started upscale in a worker thread...")
+    else
+        -- Main thread upscale
+        print_to_screen("Starting ONNX upscale on the main thread...")
+        local processing_start_time = love.timer.getTime()
 
-    img_upscaled = result_or_err
-    print_to_screen("Image upscaled successfully")
-    print_to_screen(string.format("ONNX processing time: %.3f seconds",
-        love.timer.getTime() - processing_start_time))
+        local ok, result_or_err = xpcall(function()
+            local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
+            if not onnx_api then
+                error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
+            end
 
-    local working_set, commit_size, peak_working_set = get_memory_usage()
-    if working_set and commit_size and peak_working_set then
-        print_to_screen(string.format("Memory usage - RAM: %d MB, Virtual: %d MB, Peak: %d MB",
-            working_set, commit_size, peak_working_set))
+            local session = Onnx.create_session(MODEL_UPSCALER_PATH)
+            if not session or not session.session then
+                error((session and tostring(session.message)) or "Failed to create ONNX session")
+            end
+            print(session.message)
+
+            local image_data = love.image.newImageData(IMAGE_PATH)
+            return Onnx.upscale(session, image_data, false)
+        end, debug.traceback)
+
+        if not ok then
+            print_to_screen("Upscale failed: " .. tostring(result_or_err))
+            return
+        end
+
+        img_upscaled = result_or_err
+        print_to_screen("Image upscaled successfully")
+        print_to_screen(string.format("ONNX processing time: %.3f seconds",
+            love.timer.getTime() - processing_start_time))
+
+        local working_set, commit_size, peak_working_set = get_memory_usage()
+        if working_set and commit_size and peak_working_set then
+            print_to_screen(string.format("Memory usage - RAM: %d MB, Virtual: %d MB, Peak: %d MB",
+                working_set, commit_size, peak_working_set))
+        end
     end
 end
 
@@ -106,8 +132,8 @@ function love.load()
         print_to_screen("Failed to get memory usage")
     end
 
-    -- start_background_removal()
-    start_upscale()
+    start_background_removal()
+    -- start_upscale()
 end
 
 
@@ -115,13 +141,15 @@ function love.update(dt)
     Threading.update()
 
     if processing_start_time then
-        if Threading.has_crashed(1) then
-            print_to_screen("Worker thread 1 has crashed")
-            processing_start_time = nil
-            last_elapsed_seconds = nil
-            Threading.stop(1)
-            Threading.shutdown()
-            return
+        for i = 1, 2 do
+            if Threading.has_crashed(i) then
+                print_to_screen("Worker thread " .. tostring(i) .. " has crashed")
+                processing_start_time = nil
+                last_elapsed_seconds = nil
+                Threading.stop(i)
+                Threading.shutdown()
+                return
+            end
         end
 
         local elapsed_seconds = math.floor(love.timer.getTime() - processing_start_time)
@@ -131,10 +159,11 @@ function love.update(dt)
             print_to_screen(string.format("  [Timer]: %d seconds. Memory usage - RAM: %d " ..
                 "MB, Virtual: %d MB", elapsed_seconds, working_set, commit_size))
 
-            local last_message = Threading.consume_last_message(1)
-            if last_message and last_message:match("^remove_background_done:") then
+            -- Check messages from worker 1 - background removal
+            local last_message_1 = Threading.consume_last_message(1)
+            if last_message_1 and last_message_1:match("^remove_background_done:") then
                 local decoded_FileData = love.filesystem.newFileData(love.data.decode("data", "base64",
-                        last_message:sub(#"remove_background_done:" + 1)), "_")
+                        last_message_1:sub(#"remove_background_done:" + 1)), "_")
                 img_no_background = lg.newImage(decoded_FileData)
                 print_to_screen("Background removed from image successfully")
                 print_to_screen(string.format("ONNX processing time: %.3f seconds",
@@ -142,13 +171,34 @@ function love.update(dt)
                 working_set, commit_size, peak_working_set = get_memory_usage()
                 print_to_screen(string.format("Memory usage - RAM: %d " ..
                     "MB, Virtual: %d MB, Peak: %d MB", working_set, commit_size, peak_working_set))
-
                 processing_start_time = nil
                 last_elapsed_seconds = nil
                 Threading.stop(1)
-            elseif last_message and last_message:match("^remove_background_error:") then
-                local error_text = last_message:sub(#"remove_background_error:" + 1)
+            elseif last_message_1 and last_message_1:match("^remove_background_error:") then
+                local error_text = last_message_1:sub(#"remove_background_error:" + 1)
                 print_to_screen("Background removal failed: " .. tostring(error_text))
+                processing_start_time = nil
+                last_elapsed_seconds = nil
+            end
+
+            -- Check messages from worker 2 - image upscaling
+            local last_message_2 = Threading.consume_last_message(2)
+            if last_message_2 and last_message_2:match("^upscale_done:") then
+                local decoded_FileData = love.filesystem.newFileData(love.data.decode("data", "base64",
+                        last_message_2:sub(#"upscale_done:" + 1)), "_")
+                img_upscaled = lg.newImage(decoded_FileData)
+                print_to_screen("Image upscaled successfully")
+                print_to_screen(string.format("ONNX processing time: %.3f seconds",
+                        love.timer.getTime() - processing_start_time))
+                working_set, commit_size, peak_working_set = get_memory_usage()
+                print_to_screen(string.format("Memory usage - RAM: %d " ..
+                    "MB, Virtual: %d MB, Peak: %d MB", working_set, commit_size, peak_working_set))
+                processing_start_time = nil
+                last_elapsed_seconds = nil
+                Threading.stop(2)
+            elseif last_message_2 and last_message_2:match("^upscale_error:") then
+                local error_text = last_message_2:sub(#"upscale_error:" + 1)
+                print_to_screen("Image upscaling failed: " .. tostring(error_text))
                 processing_start_time = nil
                 last_elapsed_seconds = nil
             end
