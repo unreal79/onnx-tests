@@ -19,10 +19,13 @@ font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
 local WORKER_FILE = "thrd_wrkr_bg_remover.lua" -- thread worker
 local IMAGE_PATH = "assets/parrot.png"
 local img_parrot = lg.newImage(IMAGE_PATH)
+local img_upscaled = nil
 local img_no_background = nil
-local MODEL_PATH = "models/u2net.onnx" -- u2netp, u2net, birefnet-lite-512
--- local MODEL_PATH = "models/birefnet-lite-512.onnx" -- u2netp, u2net, birefnet-lite-512
-local THRESHOLD = 0.25
+-- local MODEL_UPSCALER_PATH = "models/4x-ClearRealityV1.onnx"
+local MODEL_UPSCALER_PATH = "models/1x-Kim2091-DeJpeg-v0.onnx"
+local MODEL_BG_REMOVER_PATH = "models/u2net.onnx"
+-- local MODEL_BG_REMOVER_PATH = "models/birefnet-lite-512.onnx"
+local BACKGROUND_REMOVAL_THRESHOLD = 0.25
 
 local processing_start_time = nil
 local last_elapsed_seconds = nil
@@ -40,7 +43,8 @@ local function start_background_removal()
         return
     end
 
-    local command = string.format("remove_background|%s|%s|%s", MODEL_PATH, IMAGE_PATH, tostring(THRESHOLD))
+    local command = string.format("remove_background|%s|%s|%s", MODEL_BG_REMOVER_PATH, IMAGE_PATH,
+            tostring(BACKGROUND_REMOVAL_THRESHOLD))
     ok, err = Threading.command(1, command)
     if not ok then
         print_to_screen("Failed to queue background removal: " .. tostring(err))
@@ -50,6 +54,43 @@ local function start_background_removal()
     processing_start_time = love.timer.getTime()
     last_elapsed_seconds = nil
     print_to_screen("Started background removal in a worker thread...")
+end
+
+local function start_upscale()
+    print_to_screen("Starting ONNX upscale on the main thread...")
+    local processing_start_time = love.timer.getTime()
+
+    local ok, result_or_err = xpcall(function()
+        local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
+        if not onnx_api then
+            error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
+        end
+
+        local session = Onnx.create_session(MODEL_UPSCALER_PATH)
+        if not session or not session.session then
+            error((session and tostring(session.message)) or "Failed to create ONNX session")
+        end
+        print(session.message)
+
+        local image_data = love.image.newImageData(IMAGE_PATH)
+        return Onnx.upscale(session, image_data)
+    end, debug.traceback)
+
+    if not ok then
+        print_to_screen("Upscale failed: " .. tostring(result_or_err))
+        return
+    end
+
+    img_upscaled = result_or_err
+    print_to_screen("Image upscaled successfully")
+    print_to_screen(string.format("ONNX processing time: %.3f seconds",
+        love.timer.getTime() - processing_start_time))
+
+    local working_set, commit_size, peak_working_set = get_memory_usage()
+    if working_set and commit_size and peak_working_set then
+        print_to_screen(string.format("Memory usage - RAM: %d MB, Virtual: %d MB, Peak: %d MB",
+            working_set, commit_size, peak_working_set))
+    end
 end
 
 
@@ -65,7 +106,8 @@ function love.load()
         print_to_screen("Failed to get memory usage")
     end
 
-    start_background_removal()
+    -- start_background_removal()
+    start_upscale()
 end
 
 
@@ -130,6 +172,9 @@ function love.draw()
     lg.clear(0, 0, 1, 1)
     lg.setColor(1, 1, 1, 1)
     lg.draw(img_parrot, 200, 10)
+    if img_upscaled then
+        lg.draw(img_upscaled, 200 + img_parrot:getWidth(), 10)
+    end
     if img_no_background then
         lg.draw(img_no_background, 200 + img_parrot:getWidth(), 10)
     end

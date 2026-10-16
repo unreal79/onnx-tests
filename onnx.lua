@@ -549,7 +549,8 @@ local function resolve_mask_dimensions(dims, element_count)
     if #dims >= 2 then
         local mask_h = dims[#dims - 1]
         local mask_w = dims[#dims]
-        if mask_h ~= nil and mask_w ~= nil and mask_h > 0 and mask_w > 0 and mask_h * mask_w <= element_count then
+        if mask_h ~= nil and mask_w ~= nil and mask_h > 0 and mask_w > 0 and
+                mask_h * mask_w <= element_count then
             print(string.format("Using mask dimensions from tensor: %dx%d", mask_w, mask_h))
             return mask_w, mask_h
         end
@@ -580,7 +581,7 @@ end
 
 
 --- Resizes an image to the U2Net input size and applies standard RGB normalization.
---- @param image_data userdata # Love2D ImageData object.
+--- @param image_data any # Love2D ImageData object.
 --- @param target_w integer # Target width used by the U2Net model.
 --- @param target_h integer # Target height used by the U2Net model.
 --- @return any # Float buffer containing normalized RGB channels.
@@ -612,6 +613,331 @@ local function resize_and_normalize(image_data, target_w, target_h, channel_coun
 
     print("Float buffer size: " .. tostring(float_buffer_size) .. " bytes")
     return float_buffer
+end
+
+
+--- Copies RGB data into a float buffer without ImageNet normalization.
+--- @param image_data any # Love2D ImageData object.
+--- @param target_w integer # Target width used by the model.
+--- @param target_h integer # Target height used by the model.
+--- @param channel_count integer # Number of channels expected by the model.
+--- @return any # Float buffer containing planar RGB channels in the [0, 1] range.
+local function resize_and_pack_rgb(image_data, target_w, target_h, channel_count)
+    local src_w = image_data:getWidth()
+    local src_h = image_data:getHeight()
+    local float_buffer_size = target_w * target_h * channel_count
+    local float_buffer = ffi.new("float[?]", float_buffer_size)
+    local max_x = src_w - 1
+    local max_y = src_h - 1
+    local plane_size = target_w * target_h
+
+    for y = 0, target_h - 1 do
+        local src_y = math.min(max_y, math.floor((y + 0.5) * src_h / target_h))
+        for x = 0, target_w - 1 do
+            local src_x = math.min(max_x, math.floor((x + 0.5) * src_w / target_w))
+            local r, g, b = image_data:getPixel(src_x, src_y)
+            local pixel_index = y * target_w + x
+
+            if channel_count >= 3 then
+                float_buffer[pixel_index] = r
+                float_buffer[plane_size + pixel_index] = g
+                float_buffer[plane_size * 2 + pixel_index] = b
+
+                if channel_count > 3 then
+                    for channel_index = 3, channel_count - 1 do
+                        float_buffer[plane_size * channel_index + pixel_index] = 0
+                    end
+                end
+            else
+                float_buffer[pixel_index] = (r + g + b) / 3.0
+            end
+        end
+    end
+
+    print("RGB float buffer size: " .. tostring(float_buffer_size) .. " bytes")
+    return float_buffer
+end
+
+
+--- Ensures session tensor names are cached on the session metadata table.
+--- @param session table # ONNX session metadata created by `Onnx.create_session`.
+--- @return table # Input tensor names.
+--- @return table # Output tensor names.
+local function ensure_session_tensor_names(session)
+    local input_names = session.input_names
+    local output_names = session.output_names
+
+    if type(input_names) ~= "table" or type(output_names) ~= "table" then
+        input_names, output_names = get_session_tensor_names(session.session)
+        session.input_names = input_names
+        session.output_names = output_names
+    end
+
+    return input_names, output_names
+end
+
+
+--- Resolves the input size used for an inference call.
+--- @param input_shape table|nil # ONNX input shape list.
+--- @param fallback_w integer # Width to use when the model shape is dynamic.
+--- @param fallback_h integer # Height to use when the model shape is dynamic.
+--- @return number # Width used for the runtime input tensor.
+--- @return number # Height used for the runtime input tensor.
+--- @return number # Channel count.
+local function resolve_runtime_input_size(input_shape, fallback_w, fallback_h)
+    local target_w, target_h, channel_count = infer_model_input_size(input_shape)
+
+    if type(input_shape) == "table" and #input_shape >= 4 then
+        local width_dim = tonumber(input_shape[#input_shape]) or 0
+        local height_dim = tonumber(input_shape[#input_shape - 1]) or 0
+        if width_dim > 0 and height_dim > 0 then
+            return target_w, target_h, math.max(1, channel_count)
+        end
+    end
+
+    return fallback_w, fallback_h, math.max(1, channel_count)
+end
+
+
+--- Runs a single-input single-output ONNX model and returns the output tensor.
+--- @param session table # ONNX session metadata created by `Onnx.create_session`.
+--- @param input_name string # Input tensor name.
+--- @param output_name string # Output tensor name.
+--- @param input_buffer any # Float tensor buffer.
+--- @param input_w integer # Runtime input width.
+--- @param input_h integer # Runtime input height.
+--- @param channel_count integer # Runtime input channel count.
+--- @return userdata # Input tensor handle.
+--- @return userdata # Output tensor handle.
+--- @return any # Float pointer to the output tensor memory.
+--- @return table # Output tensor dimensions.
+--- @return number # Output tensor element count.
+local function run_single_output_session(session, input_name, output_name, input_buffer, input_w,
+            input_h, channel_count)
+    local mem_info_out = ffi.new("OrtMemoryInfo*[1]")
+    check(State.api.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR, ORT_MEM_TYPE_DEFAULT, mem_info_out),
+        "CreateCpuMemoryInfo")
+
+    local shape_array = ffi.new("int64_t[4]", 1, channel_count, input_h, input_w)
+    local input_value = ffi.new("OrtValue*[1]")
+    local input_data_len = ffi.sizeof("float") * input_w * input_h * channel_count
+    check(State.api.CreateTensorWithDataAsOrtValue(mem_info_out[0], ffi.cast("void*", input_buffer),
+        input_data_len, shape_array, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, input_value),
+        "CreateTensorWithDataAsOrtValue")
+
+    local input_name_cstr = to_c_string(input_name)
+    local output_name_cstr = to_c_string(output_name)
+    local input_name_ptr = ffi.new("const char*[1]", input_name_cstr)
+    local output_name_ptr = ffi.new("const char*[1]", output_name_cstr)
+    local input_tensors_ptr = ffi.new("const OrtValue*[1]", input_value[0])
+    local output_tensors_ptr = ffi.new("OrtValue*[1]")
+    output_tensors_ptr[0] = NULL
+
+    check(State.api.Run(session.session, NULL, input_name_ptr, input_tensors_ptr, 1, output_name_ptr, 1,
+        output_tensors_ptr), "Run")
+
+    if output_tensors_ptr[0] == NULL then
+        error("ONNX Runtime returned a NULL output tensor", 2)
+    end
+
+    local raw_output = ffi.new("void*[1]")
+    check(State.api.GetTensorMutableData(output_tensors_ptr[0], raw_output), "GetTensorMutableData")
+
+    local output_dims, output_element_count = get_value_shape(output_tensors_ptr[0])
+    return input_value[0], output_tensors_ptr[0], ffi.cast("float*", raw_output[0]), output_dims,
+            output_element_count
+end
+
+
+--- Releases an ONNX tensor handle if it is valid.
+--- @param value userdata|nil # Tensor handle.
+local function release_ort_value(value)
+    if value ~= nil and value ~= NULL and State.api.ReleaseValue ~= nil then
+        check(State.api.ReleaseValue(value), "ReleaseValue")
+    end
+end
+
+
+--- Creates a new ImageData containing the selected region.
+--- @param image_data any # Source ImageData.
+--- @param start_x integer # Source X coordinate.
+--- @param start_y integer # Source Y coordinate.
+--- @param width integer # Region width.
+--- @param height integer # Region height.
+--- @return any # Cropped ImageData region.
+local function copy_image_region(image_data, start_x, start_y, width, height)
+    local region = love.image.newImageData(width, height)
+    region:paste(image_data, 0, 0, start_x, start_y, width, height)
+    return region
+end
+
+
+--- Builds tile start positions with guaranteed coverage of the source axis.
+--- @param total_length integer # Source width or height.
+--- @param tile_size integer # Tile size in pixels.
+--- @param overlap integer # Overlap between adjacent tiles in pixels.
+--- @return table # Ordered tile start coordinates.
+local function build_tile_positions(total_length, tile_size, overlap)
+    if total_length <= tile_size then
+        return { 0 }
+    end
+
+    local positions = { 0 }
+    local step = math.max(1, tile_size - overlap)
+    local last_start = total_length - tile_size
+    local position = 0
+
+    while position < last_start do
+        position = math.min(position + step, last_start)
+        if position == positions[#positions] then
+            break
+        end
+        positions[#positions + 1] = position
+    end
+
+    return positions
+end
+
+
+--- Computes the source interval owned by a tile after overlap splitting.
+--- @param positions table # Tile start positions on an axis.
+--- @param index integer # Current tile index.
+--- @param total_length integer # Source width or height.
+--- @param tile_size integer # Tile size in pixels.
+--- @return number # Tile start.
+--- @return number # Tile end.
+--- @return number # Owned interval start.
+--- @return number # Owned interval end.
+local function resolve_tile_ownership(positions, index, total_length, tile_size)
+    local tile_start = positions[index]
+    local tile_extent = math.min(tile_size, total_length)
+    local tile_end = math.min(total_length, tile_start + tile_extent)
+
+    local owned_start = 0
+    if index > 1 then
+        local previous_start = positions[index - 1]
+        local previous_end = math.min(total_length, previous_start + tile_extent)
+        owned_start = math.floor(((tile_start + previous_end) * 0.5) + 0.5)
+    end
+
+    local owned_end = total_length
+    if index < #positions then
+        owned_end = math.floor(((positions[index + 1] + tile_end) * 0.5) + 0.5)
+    end
+
+    return tile_start, tile_end, owned_start, owned_end
+end
+
+
+--- Resolves a tensor layout into image dimensions.
+--- @param dims table # Tensor dimension list.
+--- @param element_count number # Number of elements in the tensor.
+--- @return number # Image width.
+--- @return number # Image height.
+--- @return number # Channel count.
+--- @return string # Tensor layout descriptor.
+local function resolve_image_tensor_layout(dims, element_count)
+    if #dims == 4 then
+        if dims[1] == 1 and dims[2] > 0 and dims[2] <= 4 and dims[3] > 0 and dims[4] > 0 and
+            dims[2] * dims[3] * dims[4] <= element_count then
+            return dims[4], dims[3], dims[2], "nchw"
+        end
+
+        if dims[1] == 1 and dims[4] > 0 and dims[4] <= 4 and dims[2] > 0 and dims[3] > 0 and
+            dims[2] * dims[3] * dims[4] <= element_count then
+            return dims[3], dims[2], dims[4], "nhwc"
+        end
+    elseif #dims == 3 then
+        if dims[1] > 0 and dims[1] <= 4 and dims[2] > 0 and dims[3] > 0 and
+                dims[1] * dims[2] * dims[3] <= element_count then
+            return dims[3], dims[2], dims[1], "nchw"
+        end
+
+        if dims[3] > 0 and dims[3] <= 4 and dims[1] > 0 and dims[2] > 0 and
+                dims[1] * dims[2] * dims[3] <= element_count then
+            return dims[2], dims[1], dims[3], "nhwc"
+        end
+    elseif #dims == 2 and dims[1] > 0 and dims[2] > 0 and dims[1] * dims[2] <= element_count then
+        return dims[2], dims[1], 1, "hw"
+    end
+
+    error("Unsupported ONNX image tensor layout: " .. table.concat(dims, "x"), 2)
+end
+
+
+--- Reads an RGB pixel from an ONNX output tensor.
+--- @param tensor_data any # Float pointer to tensor data.
+--- @param layout string # Tensor layout descriptor.
+--- @param channel_count integer # Number of tensor channels.
+--- @param image_w integer # Tensor image width.
+--- @param image_h integer # Tensor image height.
+--- @param x integer # Pixel X coordinate.
+--- @param y integer # Pixel Y coordinate.
+--- @return number # Red channel.
+--- @return number # Green channel.
+--- @return number # Blue channel.
+local function read_tensor_rgb(tensor_data, layout, channel_count, image_w, image_h, x, y)
+    local pixel_index = y * image_w + x
+    if layout == "nchw" then
+        local plane_size = image_w * image_h
+        local r = tensor_data[pixel_index]
+        local g = channel_count >= 2 and tensor_data[plane_size + pixel_index] or r
+        local b = channel_count >= 3 and tensor_data[(plane_size * 2) + pixel_index] or g
+        return r, g, b
+    end
+
+    if layout == "nhwc" then
+        local base_index = (pixel_index * channel_count)
+        local r = tensor_data[base_index]
+        local g = channel_count >= 2 and tensor_data[base_index + 1] or r
+        local b = channel_count >= 3 and tensor_data[base_index + 2] or g
+        return r, g, b
+    end
+
+    local value = tensor_data[pixel_index]
+    return value, value, value
+end
+
+
+--- Detects the output value scale used by a super-resolution model.
+--- @param tensor_data any # Float pointer to tensor data.
+--- @param element_count number # Number of tensor elements.
+--- @return number # Multiplier applied before clamping to [0, 1].
+local function detect_output_value_scale(tensor_data, element_count)
+    local min_value = tensor_data[0]
+    local max_value = tensor_data[0]
+    local sample_step = math.max(1, math.floor(element_count / 4096))
+
+    for index = sample_step, element_count - 1, sample_step do
+        local value = tensor_data[index]
+        if value < min_value then
+            min_value = value
+        end
+        if value > max_value then
+            max_value = value
+        end
+    end
+
+    print(string.format("Upscale output range: min=%f, max=%f", min_value, max_value))
+    if max_value > 2.0 or min_value < -0.5 then
+        return 1.0 / 255.0
+    end
+
+    return 1.0
+end
+
+
+--- Clamps a floating-point channel to Love2D color range.
+--- @param value number # Channel value.
+--- @return number # Clamped channel value.
+local function clamp01(value)
+    if value < 0 then
+        return 0
+    end
+    if value > 1 then
+        return 1
+    end
+    return value
 end
 
 
@@ -666,7 +992,8 @@ local function get_session_input_shape(session_or_ptr, input_name)
             --     check(state.api.ReleaseTensorTypeAndShapeInfo(tensor_info[0]), "ReleaseTensorTypeAndShapeInfo") -- TODO
             -- end
 
-            print(string.format("Detected input shape for tensor '%s': %s", input_name, table.concat(dims, "x")))
+            print(string.format("Detected input shape for tensor '%s': %s", input_name,
+                    table.concat(dims, "x")))
             return dims
         end
     end
@@ -698,9 +1025,7 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
         image_data = image_or_data:getData()
     end
 
-    local input_names, output_names = get_session_tensor_names(session.session)
-    session.input_names = input_names
-    session.output_names = output_names
+    local input_names, output_names = ensure_session_tensor_names(session)
 
     local input_name = input_names[1]
     local output_name = output_names[1]
@@ -722,37 +1047,8 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
     end
 
     local input_buffer = resize_and_normalize(image_data, target_w, target_h, channel_count)
-    local mem_info_out = ffi.new("OrtMemoryInfo*[1]")
-    check(State.api.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR, ORT_MEM_TYPE_DEFAULT, mem_info_out),
-            "CreateCpuMemoryInfo")
-
-    local shape_array = ffi.new("int64_t[4]", 1, channel_count, target_h, target_w)
-    local input_value = ffi.new("OrtValue*[1]")
-    local input_data_len = ffi.sizeof("float") * target_w * target_h * channel_count
-    check(State.api.CreateTensorWithDataAsOrtValue(mem_info_out[0], ffi.cast("void*", input_buffer),
-        input_data_len, shape_array, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, input_value),
-        "CreateTensorWithDataAsOrtValue")
-
-    local input_name_cstr = to_c_string(input_name)
-    local output_name_cstr = to_c_string(output_name)
-    local input_name_ptr = ffi.new("const char*[1]", input_name_cstr)
-    local output_name_ptr = ffi.new("const char*[1]", output_name_cstr)
-    local input_tensors_ptr = ffi.new("const OrtValue*[1]", input_value[0])
-    local output_tensors_ptr = ffi.new("OrtValue*[1]")
-    output_tensors_ptr[0] = NULL
-
-    check(State.api.Run(session.session, NULL, input_name_ptr, input_tensors_ptr, 1, output_name_ptr, 1,
-        output_tensors_ptr), "Run")
-
-    if output_tensors_ptr[0] == NULL then
-        error("ONNX Runtime returned a NULL output tensor", 2)
-    end
-
-    local raw_output = ffi.new("void*[1]")
-    check(State.api.GetTensorMutableData(output_tensors_ptr[0], raw_output), "GetTensorMutableData")
-
-    local output_mask = ffi.cast("float*", raw_output[0])
-    local output_dims, output_element_count = get_value_shape(output_tensors_ptr[0])
+    local input_value, output_value, output_mask, output_dims, output_element_count = run_single_output_session(
+            session, input_name, output_name, input_buffer, target_w, target_h, channel_count)
     local mask_w, mask_h = resolve_mask_dimensions(output_dims, output_element_count)
 
     local output_image_data = love.image.newImageData(src_w, src_h)
@@ -793,18 +1089,8 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
     print(string.format("Center pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
             r * 255, g * 255, b * 255, a * 255, a))
 
-    if input_value[0] ~= nil and input_value[0] ~= NULL and State.api.ReleaseValue ~= nil then
-        check(State.api.ReleaseValue(input_value[0]), "ReleaseValue")
-        input_value[0] = NULL
-    else
-        print("Input value was not released because it is nil or already NULL")
-    end
-    if output_tensors_ptr[0] ~= nil and output_tensors_ptr[0] ~= NULL and State.api.ReleaseValue ~= nil then
-        check(State.api.ReleaseValue(output_tensors_ptr[0]), "ReleaseValue")
-        output_tensors_ptr[0] = NULL
-    else
-        print("Output tensors pointer was not released because it is nil or already NULL")
-    end
+    release_ort_value(input_value)
+    release_ort_value(output_value)
     -- if mem_info_out[0] ~= nil and mem_info_out[0] ~= NULL and state.api.ReleaseMemoryInfo ~= nil then
     --     state.api.ReleaseMemoryInfo(mem_info_out[0]) -- TODO: crash
     --     mem_info_out[0] = NULL
@@ -822,6 +1108,142 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
     -- else
     --     print("Environment was not released because ReleaseEnv is nil")
     -- end
+
+    if return_image_data then
+        return output_image_data
+    end
+
+    return love.graphics.newImage(output_image_data)
+end
+
+
+--- Runs the super-resolution model over an image using overlapped 200x200 tiles.
+--- @param session table # ONNX session metadata created by `Onnx.create_session`.
+--- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to upscale.
+--- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.
+--- @param tile_size number|nil # The size of the tiles to use for upscaling. Defaults to 200.
+--- @param tile_overlap number|nil # The overlap between tiles. Defaults to 24.
+--- @return love.Image|love.ImageData # Upscaled image assembled from model tiles.
+function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile_overlap)
+    return_image_data = return_image_data == true
+    tile_size = tile_size or 200
+    tile_overlap = tile_overlap or 24
+    if type(session) ~= "table" or type(session.session) == "nil" then
+        error("ONNX Runtime session is invalid", 2)
+    end
+
+    if type(image_or_data) ~= "userdata" then
+        error("Expected a Love2D ImageData or Image object for image upscaling", 2)
+    end
+
+    local image_data = image_or_data
+    if image_or_data.typeOf ~= nil and image_or_data:typeOf("Image") then
+        image_data = image_or_data:getData()
+    end
+
+    local input_names, output_names = ensure_session_tensor_names(session)
+    local input_name = input_names[1]
+    local output_name = output_names[1]
+    if input_name == nil or output_name == nil then
+        error("ONNX Runtime session does not expose input/output tensor names", 2)
+    end
+
+    local input_shape = get_session_input_shape(session, input_name)
+    local src_w = image_data:getWidth()
+    local src_h = image_data:getHeight()
+    local x_positions = build_tile_positions(src_w, tile_size, tile_overlap)
+    local y_positions = build_tile_positions(src_h, tile_size, tile_overlap)
+
+    local runtime_input_w, runtime_input_h, channel_count = resolve_runtime_input_size(input_shape,
+        math.min(tile_size, src_w), math.min(tile_size, src_h))
+    if channel_count < 1 then
+        channel_count = 3
+    end
+
+    local output_image_data = nil
+    local scale_x = nil
+    local scale_y = nil
+    local output_value_scale = nil
+
+    for tile_y_index, tile_y in ipairs(y_positions) do
+        local _, tile_src_end_y, owned_src_top, owned_src_bottom = resolve_tile_ownership(y_positions,
+            tile_y_index, src_h, tile_size)
+        local tile_h = tile_src_end_y - tile_y
+        local owned_tile_top = owned_src_top - tile_y
+
+        for tile_x_index, tile_x in ipairs(x_positions) do
+            local _, tile_src_end_x, owned_src_left, owned_src_right = resolve_tile_ownership(x_positions,
+                tile_x_index, src_w, tile_size)
+            local tile_w = tile_src_end_x - tile_x
+            local owned_tile_left = owned_src_left - tile_x
+
+            local tile_image_data = copy_image_region(image_data, tile_x, tile_y, tile_w, tile_h)
+            local tile_input_buffer = resize_and_pack_rgb(tile_image_data, runtime_input_w, runtime_input_h,
+                channel_count)
+            local input_value, output_value, raw_output, output_dims, output_element_count =
+                run_single_output_session(session, input_name, output_name, tile_input_buffer, runtime_input_w,
+                    runtime_input_h, channel_count)
+
+            local tile_out_w, tile_out_h, output_channels, output_layout = resolve_image_tensor_layout(output_dims,
+                output_element_count)
+
+            if scale_x == nil or scale_y == nil then
+                scale_x = tile_out_w / tile_w
+                scale_y = tile_out_h / tile_h
+                if scale_x <= 0 or scale_y <= 0 then
+                    release_ort_value(input_value)
+                    release_ort_value(output_value)
+                    error("Upscale model returned invalid output dimensions", 2)
+                end
+
+                output_image_data = love.image.newImageData(
+                    math.max(1, math.floor((src_w * scale_x) + 0.5)),
+                    math.max(1, math.floor((src_h * scale_y) + 0.5))
+                )
+                output_value_scale = detect_output_value_scale(raw_output, output_element_count)
+                print(string.format("Detected upscale factor: %.4fx%.4f", scale_x, scale_y))
+                print(string.format("Upscaled image size: %dx%d", output_image_data:getWidth(),
+                    output_image_data:getHeight()))
+            end
+
+            if output_image_data == nil or output_value_scale == nil then
+                release_ort_value(input_value)
+                release_ort_value(output_value)
+                error("Upscale output buffer was not initialized", 2)
+            end
+
+            local dst_x = math.floor((owned_src_left * scale_x) + 0.5)
+            local dst_y = math.floor((owned_src_top * scale_y) + 0.5)
+            local crop_out_x = math.floor((owned_tile_left * scale_x) + 0.5)
+            local crop_out_y = math.floor((owned_tile_top * scale_y) + 0.5)
+            local crop_out_w = math.max(1, math.floor(((owned_src_right - owned_src_left) * scale_x) + 0.5))
+            local crop_out_h = math.max(1, math.floor(((owned_src_bottom - owned_src_top) * scale_y) + 0.5))
+
+            crop_out_w = math.min(crop_out_w, tile_out_w - crop_out_x)
+            crop_out_h = math.min(crop_out_h, tile_out_h - crop_out_y)
+            crop_out_w = math.min(crop_out_w, output_image_data:getWidth() - dst_x)
+            crop_out_h = math.min(crop_out_h, output_image_data:getHeight() - dst_y)
+
+            for out_y = 0, crop_out_h - 1 do
+                for out_x = 0, crop_out_w - 1 do
+                    local r, g, b = read_tensor_rgb(raw_output, output_layout, output_channels,
+                        tile_out_w, tile_out_h, crop_out_x + out_x, crop_out_y + out_y)
+                    output_image_data:setPixel(dst_x + out_x, dst_y + out_y,
+                        clamp01(r * output_value_scale),
+                        clamp01(g * output_value_scale),
+                        clamp01(b * output_value_scale),
+                        1)
+                end
+            end
+
+            release_ort_value(input_value)
+            release_ort_value(output_value)
+        end
+    end
+
+    if output_image_data == nil then
+        error("Upscale did not produce any output tiles", 2)
+    end
 
     if return_image_data then
         return output_image_data
