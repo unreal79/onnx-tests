@@ -1,0 +1,27 @@
+https://huggingface.co/notaneimu/onnx-image-models/tree/main:
+1x-Archivist_Soft.onnx
+1x-Kim2091-DeJpeg-v0.onnx
+1x-Restoration-jpg-ESRGAN_64nf_23nb-jpg40_60-vyls.onnx
+4x-ClearRealityV1.onnx
+4x_foolhardy_Remacri.onnx
+4xPurePhoto-RealPLSKR.onnx
+4xPurePhoto-Span.onnx
+realesr-general-wdn-x4v3.onnx
+4xNomos2_realplksr_dysample_256_fp32_fullyoptimized.onnx
+4xNomosWebPhoto_RealPLKSR.onnx
+1x-SuperScale_Alt_RPLKSR_S.onnx
+upscayl-remacri-4x.onnx
+4xLSDIRCompactv2.onnx
+
+
+onnx_models_20260808_main.zip: https://github.com/rigaya/HWEnc-onnx-models:
+ArtCNN_R8F64_RGB.onnx
+BSRGAN.onnx
+BSRGANx2.onnx
+BSRNet.onnx
+up4x_latest_conservative.onnx
+waifu2x_vgg7_photo_scale2x.onnx
+websr_cnn2x_l_rl.onnx
+
+https://huggingface.co/Kim2091/UltraSharpV2/tree/main:
+4x-UltraSharpV2_Lite_fp32_op17.onnx

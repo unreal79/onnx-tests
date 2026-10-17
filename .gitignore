@@ -1,11 +1,11 @@
 .git/
 onnxruntime/
-models/
-_output/
 _INFO/
+_scripts/
 _obfuscated/
 _web_build/
 _makelove-build/
 __pycache__/
 *.pyc
-_scripts/
+*.onnx
+*.zip

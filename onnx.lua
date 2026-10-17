@@ -467,8 +467,8 @@ end
 --- @return number # Channel count.
 local function infer_model_input_size(input_shape)
     if type(input_shape) ~= "table" or #input_shape == 0 then
-        print("Invalid input shape, using default size 320x320x3")
-        return 320, 320, 3
+        print("Invalid input shape, using default size 512x512x3")
+        return 512, 512, 3 --320, 320, 3
     end
 
     local shape = {}
@@ -483,11 +483,20 @@ local function infer_model_input_size(input_shape)
     if #shape >= 4 then
         if shape[1] == 1 and shape[2] > 0 then
             channel_count = shape[2]
-            target_h = shape[3]
             target_w = shape[4]
+            target_h = shape[3]
+            if channel_count > target_w then
+                target_w, channel_count = channel_count, target_w
+                print(string.format("Swapped target_w and channel_count: target_w=%d, channel_count=%d",
+                        target_w, channel_count))
+            elseif channel_count > target_h then
+                target_h, channel_count = channel_count, target_h
+                print(string.format("Swapped target_h and channel_count: target_h=%d, channel_count=%d",
+                        target_h, channel_count))
+            end
         elseif shape[#shape] == 3 then
-            target_h = shape[#shape - 2]
             target_w = shape[#shape - 1]
+            target_h = shape[#shape - 2]
             channel_count = 3
         else
             target_h = shape[#shape - 1]
@@ -499,8 +508,8 @@ local function infer_model_input_size(input_shape)
     end
 
     if type(target_w) ~= "number" or type(target_h) ~= "number" or target_w <= 0 or target_h <= 0 then
-        print("Invalid target width or height, using default size 320x320")
-        return 320, 320, channel_count
+        print("Invalid target width or height, using default size 512x512")
+        return 512, 512, channel_count -- 320, 320, channel_count
     end
 
     print(string.format("Detected target size: %dx%d with %d channels", target_w, target_h, channel_count))
@@ -660,8 +669,9 @@ end
 --- @param image_data any # Love2D ImageData object.
 --- @param target_w integer # Target width used by the model.
 --- @param target_h integer # Target height used by the model.
+--- @param alpha_threshold number # Alpha threshold to determine transparent pixels.
 --- @return table # Float buffer containing a binary mask in the [0, 1] range.
-local function resize_and_pack_alpha_mask(image_data, target_w, target_h)
+local function resize_and_pack_alpha_mask(image_data, target_w, target_h, alpha_threshold)
     local src_w = image_data:getWidth()
     local src_h = image_data:getHeight()
     local float_buffer_size = target_w * target_h
@@ -675,7 +685,7 @@ local function resize_and_pack_alpha_mask(image_data, target_w, target_h)
             local src_x = math.min(max_x, math.floor((x + 0.5) * src_w / target_w))
             local _, _, _, alpha = image_data:getPixel(src_x, src_y)
             local pixel_index = y * target_w + x
-            float_buffer[pixel_index] = alpha < 0.5 and 1.0 or 0.0
+            float_buffer[pixel_index] = alpha < alpha_threshold and 1.0 or 0.0
         end
     end
 
@@ -1121,11 +1131,11 @@ end
 --- Runs the segmentation model on an image and returns a new image with background removed.
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to process.
---- @param threshold number|nil # Threshold for background removal (default is 0.5).
+--- @param alpha_threshold number|nil # Threshold for background removal (default is 0.5).
 --- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.
 --- @return love.Image|love.ImageData # New asset with transparent background.
-function Onnx.remove_background(session, image_or_data, threshold, return_image_data)
-    threshold = threshold or 0.5
+function Onnx.remove_background(session, image_or_data, alpha_threshold, return_image_data)
+    alpha_threshold = alpha_threshold or 0.5
     return_image_data = return_image_data == true
     if type(session) ~= "table" or type(session.session) == "nil" then
         error("ONNX Runtime session is invalid", 2)
@@ -1151,6 +1161,7 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
     local shape = get_session_input_shape(session, input_name)
     local target_w, target_h, channel_count = infer_model_input_size(shape)
     if target_w <= 0 or target_h <= 0 then
+        print("Invalid target width or height, using default size 320x320")
         target_w, target_h, channel_count = 320, 320, 3
     end
 
@@ -1189,7 +1200,7 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
             local alpha = normalize_mask_value(output_mask[mask_index], min_value, max_value)
 
             local r, g, b, a = image_data:getPixel(x, y)
-            local alpha_mask = alpha >= threshold and 1 or 0
+            local alpha_mask = alpha >= alpha_threshold and 1 or 0
             output_image_data:setPixel(x, y,
                 r and alpha_mask == 1 and r or 0,
                 g and alpha_mask == 1 and g or 0,
@@ -1235,9 +1246,11 @@ end
 --- Runs the LaMa inpainting model using the source alpha channel as the hole mask.
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to inpaint.
+--- @param alpha_threshold number|nil # Alpha threshold to determine transparent pixels in the hole mask. Defaults to `INPAINTER_ALPHA_THRESHOLD` if not provided.
 --- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.
 --- @return love.Image|love.ImageData # Inpainted image with opaque filled regions.
-function Onnx.inpaint(session, image_or_data, return_image_data)
+function Onnx.inpaint(session, image_or_data, alpha_threshold, return_image_data)
+    alpha_threshold = alpha_threshold or 0.5
     return_image_data = return_image_data == true
     if type(session) ~= "table" or type(session.session) == "nil" then
         error("ONNX Runtime session is invalid", 2)
@@ -1257,14 +1270,17 @@ function Onnx.inpaint(session, image_or_data, return_image_data)
 
     local src_w = image_data:getWidth()
     local src_h = image_data:getHeight()
-    local input_w = 512
-    local input_h = 512
+    local shape = get_session_input_shape(session, image_input_name)
+    local input_w, input_h, channel_count = infer_model_input_size(shape)
+    if input_w <= 0 or input_h <= 0 then
+        input_w, input_h, channel_count = 512, 512, 3
+    end
 
     local image_input_buffer = resize_and_pack_rgb(image_data, input_w, input_h, 3)
-    local mask_input_buffer = resize_and_pack_alpha_mask(image_data, input_w, input_h)
+    local mask_input_buffer = resize_and_pack_alpha_mask(image_data, input_w, input_h, alpha_threshold)
     local image_input_value, mask_input_value, output_value, raw_output, output_dims, output_element_count =
-        run_inpaint_session(session, image_input_name, mask_input_name, output_name, image_input_buffer,
-            mask_input_buffer, input_w, input_h)
+            run_inpaint_session(session, image_input_name, mask_input_name, output_name, image_input_buffer,
+                mask_input_buffer, input_w, input_h)
 
     local out_w, out_h, output_channels, output_layout = resolve_image_tensor_layout(output_dims,
             output_element_count)

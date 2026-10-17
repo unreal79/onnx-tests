@@ -50,9 +50,15 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
 
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_.onnx" -- 25 sec
-local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 12 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 10 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama-manga-dynamic.onnx" -- 25 sec
+local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_js.onnx" -- 10 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_1024.onnx" -- 58 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_2048.onnx" -- 250 sec, very RAM hungry
 
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
+local INPAINTER_ALPHA_THRESHOLD = 0.25
 local CAMERA_ZOOM_STEP = 1.15
 local CAMERA_MIN_SCALE = 0.2
 local CAMERA_MAX_SCALE = 16
@@ -171,7 +177,8 @@ local function start_inpaint()
         return
     end
 
-    local command = string.format("inpaint|%s|%s", MODEL_INPAINTER_PATH, IMAGE_NO_BG_PATH)
+    local command = string.format("inpaint|%s|%s|%s", MODEL_INPAINTER_PATH, IMAGE_NO_BG_PATH,
+            tostring(INPAINTER_ALPHA_THRESHOLD))
     ok, err = Threading.command(3, command)
     if not ok then
         print_to_screen("Failed to queue inpaint: " .. tostring(err))

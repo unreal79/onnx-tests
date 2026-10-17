@@ -46,7 +46,7 @@ local function worker1_onnx_remove_background(step, command)
 
         local model_path = commands[2]
         local image_path = commands[3]
-        local threshold = tonumber(commands[4])
+        local alpha_threshold = tonumber(commands[4])
 
         send_status("remove_background_start") -- hardcoded
 
@@ -64,7 +64,7 @@ local function worker1_onnx_remove_background(step, command)
             print(session.message)
 
             local image_data = love.image.newImageData(image_path)
-            local output_image_data = Onnx.remove_background(session, image_data, threshold, true)
+            local output_image_data = Onnx.remove_background(session, image_data, alpha_threshold, true)
             return output_image_data:encode("tga", nil)
         end, debug.traceback)
 
@@ -159,6 +159,7 @@ local function worker3_onnx_inpaint(step, command)
 
         local model_path = commands[2]
         local image_path = commands[3]
+        local alpha_threshold = tonumber(commands[4])
 
         send_status("inpaint_start") -- hardcoded
 
@@ -176,7 +177,7 @@ local function worker3_onnx_inpaint(step, command)
             print(session.message)
 
             local image_data = love.image.newImageData(image_path)
-            local output_image_data = Onnx.inpaint(session, image_data, true)
+            local output_image_data = Onnx.inpaint(session, image_data, alpha_threshold, true)
             return output_image_data:encode("tga", nil)
         end, debug.traceback)
 

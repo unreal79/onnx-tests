@@ -1,0 +1,9 @@
+lama_fp16.onnx ?
+lama_fp32.onnx https://huggingface.co/Carve/LaMa-ONNX/tree/main
+inpainting_lama_2025jan.onnx https://huggingface.co/opencv/inpainting_lama/tree/main
+lama-manga-dynamic.onnx https://huggingface.co/ogkalu/lama-manga-onnx-dynamic
+lama_fp32_js.onnx https://huggingface.co/datasets/kevinallen666/lama-js-onnx/tree/main
+lama_1024.onnx lama_2048.onnx https://huggingface.co/Vincent615/lama-2048-onnx/tree/main
+
+
+other: https://huggingface.co/models?search=lama%20onnx
