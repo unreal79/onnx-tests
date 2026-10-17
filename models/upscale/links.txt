@@ -14,7 +14,7 @@ upscayl-remacri-4x.onnx
 4xLSDIRCompactv2.onnx
 
 
-onnx_models_20260808_main.zip: https://github.com/rigaya/HWEnc-onnx-models:
+from onnx_models_20260808_main.zip: https://github.com/rigaya/HWEnc-onnx-models:
 ArtCNN_R8F64_RGB.onnx
 BSRGAN.onnx
 BSRGANx2.onnx
@@ -23,5 +23,10 @@ up4x_latest_conservative.onnx
 waifu2x_vgg7_photo_scale2x.onnx
 websr_cnn2x_l_rl.onnx
 
+
 https://huggingface.co/Kim2091/UltraSharpV2/tree/main:
 4x-UltraSharpV2_Lite_fp32_op17.onnx
+
+
+https://huggingface.co/Kim2091/ClearRealityV1/tree/main/ONNX/fp32:
+4x-ClearRealityV1-fp32-opset17.onnx

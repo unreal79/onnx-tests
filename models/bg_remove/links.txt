@@ -1,0 +1,13 @@
+BiRefNet models here: https://github.com/ZhengPeng7/BiRefNet/releases
+BiRefNet fp16: https://huggingface.co/onnx-community/BiRefNet-ONNX/tree/main/onnx
+BiRefNet_512x512_fp16.onnx: https://huggingface.co/onnx-community/BiRefNet_512x512-ONNX/tree/main/onnx
+Lucida models: https://huggingface.co/PinkPixel/lucida-onnx/tree/main
+InSPyReNet.onnx models: https://huggingface.co/PinkPixel/inspyrenet-onnx
+u2netp.onnx https://huggingface.co/BritishWerewolf/U-2-Netp/tree/main/onnx
+u2net: https://huggingface.co/f5aiteam/rembg/tree/main
+u2net_human_seg: https://huggingface.co/f5aiteam/rembg/tree/main
+IS-Net: https://huggingface.co/BritishWerewolf/IS-Net/tree/main/onnx
+isnet-general-use.onnx: https://huggingface.co/SacredNoir/isnet-general-use-onnx/tree/main
+isnet-general-use-fp16.onnx: https://huggingface.co/tiper-penta/isnet-general-use-fp16/tree/main
+isnet-general-use-fp16_.onnx: https://huggingface.co/RolexAvengers/framers-isnet/tree/main
+birefnet-lite-512, birefnet-lite-512_fp16: https://huggingface.co/studioludens/birefnet-lite-512/tree/main/onnx

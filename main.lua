@@ -1,4 +1,8 @@
 -- main.lua
+
+---- Main working mode. Options: "upscaling", "inpainting", "background_removal"
+local WORKING_MODE = "background_removal"
+
 lg = love.graphics
 la = love.audio
 
@@ -11,30 +15,30 @@ Threading = require("libs.threading")
 CameraMgr = require("libs.CameraMgr.lib.CameraMgr").newManager()
 require("utils")
 
-local THREAD_WORKER_PATH = "thread_worker.lua"
-local IMAGE_PATH = "assets/parrot.png"
-local IMAGE_NO_BG_PATH = "assets/parrot_nobg.png"
+local IMAGE_PATH = "assets/parrot.png" -- Main input image
+local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
 
+---- Models. Uncomment the one you want to use for upscaling.
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Archivist_Soft.onnx" -- 7 sec, bad, eats details
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Restoration-jpg-ESRGAN_64nf_23nb-jpg40_60-vyls.onnx" -- 200 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xNomos2_realplksr_dysample_256_fp32_fullyoptimized.onnx" -- 200 sec, x8, very bad
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xNomosWebPhoto_RealPLKSR.onnx" -- 110 sec, x4, ADVANCED, sharp
--- local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED
-local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx" -- 8 sec, x4, ADVANCED
+local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED
+-- local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx" -- 8 sec, x4, ADVANCED
 -- local MODEL_UPSCALER_PATH = "models/upscale/4x-UltraSharp-fp32-opset17.onnx" -- 220 sec, x4, ADVANCED, sharp
 -- local MODEL_UPSCALER_PATH = "models/upscale/4x-UltraSharpV2_Lite_fp32_op17.onnx" -- 110 sec, x4, ADVANCED, creates halo inside
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-SuperScale_Alt_RPLKSR_S.onnx" -- 40 sec, x1, average
 -- local MODEL_UPSCALER_PATH = "models/upscale/4x_foolhardy_Remacri.onnx" -- 220 sec, x4, average, too sharp
--- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-RealPLSKR.onnx" -- 118 sec, x4, slow, bad tile
+-- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-RealPLSKR.onnx" -- 118 sec, x4, slow, bad, tile visible
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-Span.onnx" -- 8 sec, x4, very good, darkens image
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xLSDIRCompactv2.onnx" -- 8 sec, x4, average
 -- local MODEL_UPSCALER_PATH = "models/upscale/ArtCNN_R8F64_RGB.onnx" -- 12 sec, x2, average
--- local MODEL_UPSCALER_PATH = "models/upscale/hdrtvnetpp_ensemble_dynamic.onnx" -- 4 sec, x1, bad BT.2020 color output
+-- local MODEL_UPSCALER_PATH = "models/upscale/hdrtvnetpp_ensemble_dynamic.onnx" -- 4 sec, x1, bad, output in BT.2020 color
 -- local MODEL_UPSCALER_PATH = "models/upscale/BSRGAN.onnx" -- 235 sec, x4, good, fixes JPEG halo
 -- local MODEL_UPSCALER_PATH = "models/upscale/BSRGANx2.onnx" -- 230 sec, x2, good, fixes JPEG halo
 -- local MODEL_UPSCALER_PATH = "models/upscale/BSRNet.onnx" -- 230 sec, x4, good, fixes JPEG halo
--- local MODEL_UPSCALER_PATH = "models/upscale/realesr-general-wdn-x4v3.onnx" -- 15 sec, x4,very good
+-- local MODEL_UPSCALER_PATH = "models/upscale/realesr-general-wdn-x4v3.onnx" -- 15 sec, x4, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/up4x_latest_conservative.onnx" -- 20 sec, x4, average
 -- local MODEL_UPSCALER_PATH = "models/upscale/upscayl-remacri-4x.onnx" -- 230 sec, x4, average, too sharp
 -- local MODEL_UPSCALER_PATH = "models/upscale/upscale-realplksr-onnx_x4.onnx" -- 190 sec, x8, very bad
@@ -43,17 +47,17 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx"
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_scale2x.onnx" -- 4 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 15 sec
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 15 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 50 sec
-local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 4 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
 
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_.onnx" -- 25 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 10 sec
--- local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec
+local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama-manga-dynamic.onnx" -- 25 sec
-local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_js.onnx" -- 10 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_js.onnx" -- 10 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_1024.onnx" -- 58 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_2048.onnx" -- 250 sec, very RAM hungry
 
@@ -68,13 +72,14 @@ local SCREEN_FILTER_MODES = {
     { label = "Linear min / Nearest mag", min = "linear", mag = "nearest" },
     { label = "Nearest min / Linear mag", min = "nearest", mag = "linear" },
 }
+local THREAD_WORKER_PATH = "thread_worker.lua"
 
 font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
 
-local img_parrot = lg.newImage(IMAGE_PATH)
-local img_upscaled = nil
-local img_no_background = nil
-local img_inpainted = nil
+local img_parrot = lg.newImage(IMAGE_PATH) -- Main input image
+local img_no_background = nil -- output image after background removal
+local img_upscaled = nil -- output image after upscaling
+local img_inpainted = nil -- output image after inpainting
 local processing_start_time = nil
 local last_elapsed_seconds = nil
 local active_drag_buttons = 0
@@ -177,7 +182,7 @@ local function start_inpaint()
         return
     end
 
-    local command = string.format("inpaint|%s|%s|%s", MODEL_INPAINTER_PATH, IMAGE_NO_BG_PATH,
+    local command = string.format("inpaint|%s|%s|%s", MODEL_INPAINTER_PATH, IMAGE_WITH_HOLES_PATH,
             tostring(INPAINTER_ALPHA_THRESHOLD))
     ok, err = Threading.command(3, command)
     if not ok then
@@ -246,9 +251,16 @@ function love.load()
         print_to_screen("Failed to get memory usage")
     end
 
-    -- start_background_removal()
-    -- start_upscale()
-    start_inpaint()
+    if WORKING_MODE == "background_removal" then
+        start_background_removal()
+    elseif WORKING_MODE == "upscaling" then
+        start_upscale()
+    elseif WORKING_MODE == "inpainting" then
+        start_inpaint()
+    else
+        error("Unknown working mode: " .. tostring(WORKING_MODE) ..
+            ". WORKING_MODE is expected to be 'background_removal', 'upscaling', or 'inpainting'")
+    end
 end
 
 
