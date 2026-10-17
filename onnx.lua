@@ -655,6 +655,35 @@ local function resize_and_pack_rgb(image_data, target_w, target_h, channel_count
 end
 
 
+--- Builds a single-channel inpainting mask from the source alpha channel.
+--- Transparent pixels become holes to be filled by the inpainting model.
+--- @param image_data any # Love2D ImageData object.
+--- @param target_w integer # Target width used by the model.
+--- @param target_h integer # Target height used by the model.
+--- @return table # Float buffer containing a binary mask in the [0, 1] range.
+local function resize_and_pack_alpha_mask(image_data, target_w, target_h)
+    local src_w = image_data:getWidth()
+    local src_h = image_data:getHeight()
+    local float_buffer_size = target_w * target_h
+    local float_buffer = ffi.new("float[?]", float_buffer_size)
+    local max_x = src_w - 1
+    local max_y = src_h - 1
+
+    for y = 0, target_h - 1 do
+        local src_y = math.min(max_y, math.floor((y + 0.5) * src_h / target_h))
+        for x = 0, target_w - 1 do
+            local src_x = math.min(max_x, math.floor((x + 0.5) * src_w / target_w))
+            local _, _, _, alpha = image_data:getPixel(src_x, src_y)
+            local pixel_index = y * target_w + x
+            float_buffer[pixel_index] = alpha < 0.5 and 1.0 or 0.0
+        end
+    end
+
+    print("Mask float buffer size: " .. tostring(float_buffer_size) .. " bytes")
+    return float_buffer
+end
+
+
 --- Ensures session tensor names are cached on the session metadata table.
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @return table # Input tensor names.
@@ -742,6 +771,96 @@ local function run_single_output_session(session, input_name, output_name, input
     local output_dims, output_element_count = get_value_shape(output_tensors_ptr[0])
     return input_value[0], output_tensors_ptr[0], ffi.cast("float*", raw_output[0]), output_dims,
             output_element_count
+end
+
+
+--- Runs a two-input single-output ONNX inpainting model and returns the output tensor.
+--- @param session table # ONNX session metadata created by `Onnx.create_session`.
+--- @param image_input_name string # Image tensor input name.
+--- @param mask_input_name string # Mask tensor input name.
+--- @param output_name string # Output tensor name.
+--- @param image_buffer any # Float image buffer in NCHW layout.
+--- @param mask_buffer any # Float mask buffer in NCHW layout.
+--- @param input_w integer # Runtime input width.
+--- @param input_h integer # Runtime input height.
+--- @return userdata # Image input tensor handle.
+--- @return userdata # Mask input tensor handle.
+--- @return userdata # Output tensor handle.
+--- @return any # Float pointer to the output tensor memory.
+--- @return table # Output tensor dimensions.
+--- @return number # Output tensor element count.
+local function run_inpaint_session(session, image_input_name, mask_input_name, output_name,
+            image_buffer, mask_buffer, input_w, input_h)
+    local mem_info_out = ffi.new("OrtMemoryInfo*[1]")
+    check(State.api.CreateCpuMemoryInfo(ORT_ARENA_ALLOCATOR, ORT_MEM_TYPE_DEFAULT, mem_info_out),
+        "CreateCpuMemoryInfo")
+
+    local image_shape_array = ffi.new("int64_t[4]", 1, 3, input_h, input_w)
+    local mask_shape_array = ffi.new("int64_t[4]", 1, 1, input_h, input_w)
+    local image_input_value = ffi.new("OrtValue*[1]")
+    local mask_input_value = ffi.new("OrtValue*[1]")
+
+    local image_data_len = ffi.sizeof("float") * input_w * input_h * 3
+    local mask_data_len = ffi.sizeof("float") * input_w * input_h
+    check(State.api.CreateTensorWithDataAsOrtValue(mem_info_out[0], ffi.cast("void*", image_buffer),
+        image_data_len, image_shape_array, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, image_input_value),
+        "CreateTensorWithDataAsOrtValue(image)")
+    check(State.api.CreateTensorWithDataAsOrtValue(mem_info_out[0], ffi.cast("void*", mask_buffer),
+        mask_data_len, mask_shape_array, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, mask_input_value),
+        "CreateTensorWithDataAsOrtValue(mask)")
+
+    local image_input_name_cstr = to_c_string(image_input_name)
+    local mask_input_name_cstr = to_c_string(mask_input_name)
+    local output_name_cstr = to_c_string(output_name)
+    local input_name_ptrs = ffi.new("const char*[2]", image_input_name_cstr, mask_input_name_cstr)
+    local input_tensors_ptr = ffi.new("const OrtValue*[2]", image_input_value[0], mask_input_value[0])
+    local output_name_ptr = ffi.new("const char*[1]", output_name_cstr)
+    local output_tensors_ptr = ffi.new("OrtValue*[1]")
+    output_tensors_ptr[0] = NULL
+
+    check(State.api.Run(session.session, NULL, input_name_ptrs, input_tensors_ptr, 2, output_name_ptr, 1,
+        output_tensors_ptr), "Run")
+
+    if output_tensors_ptr[0] == NULL then
+        error("ONNX Runtime returned a NULL output tensor", 2)
+    end
+
+    local raw_output = ffi.new("void*[1]")
+    check(State.api.GetTensorMutableData(output_tensors_ptr[0], raw_output), "GetTensorMutableData")
+
+    local output_dims, output_element_count = get_value_shape(output_tensors_ptr[0])
+    return image_input_value[0], mask_input_value[0], output_tensors_ptr[0], ffi.cast("float*", raw_output[0]),
+            output_dims, output_element_count
+end
+
+
+--- Resolves the tensor names used by the fixed-shape LaMa ONNX export.
+--- @param input_names table # Input tensor names reported by the session.
+--- @param output_names table # Output tensor names reported by the session.
+--- @return string # Image input name.
+--- @return string # Mask input name.
+--- @return string # Output tensor name.
+local function resolve_inpaint_tensor_names(input_names, output_names)
+    local image_input_name = nil
+    local mask_input_name = nil
+
+    for _, name in ipairs(input_names) do
+        if name == "image" then
+            image_input_name = name
+        elseif name == "mask" then
+            mask_input_name = name
+        end
+    end
+
+    image_input_name = image_input_name or input_names[1]
+    mask_input_name = mask_input_name or input_names[2]
+    local output_name = output_names[1]
+
+    if image_input_name == nil or mask_input_name == nil or output_name == nil then
+        error("ONNX Runtime inpainting session does not expose image/mask/output tensors", 2)
+    end
+
+    return image_input_name, mask_input_name, output_name
 end
 
 
@@ -1104,6 +1223,79 @@ function Onnx.remove_background(session, image_or_data, threshold, return_image_
     -- else
     --     print("Environment was not released because ReleaseEnv is nil")
     -- end
+
+    if return_image_data then
+        return output_image_data
+    end
+
+    return love.graphics.newImage(output_image_data)
+end
+
+
+--- Runs the LaMa inpainting model using the source alpha channel as the hole mask.
+--- @param session table # ONNX session metadata created by `Onnx.create_session`.
+--- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to inpaint.
+--- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.
+--- @return love.Image|love.ImageData # Inpainted image with opaque filled regions.
+function Onnx.inpaint(session, image_or_data, return_image_data)
+    return_image_data = return_image_data == true
+    if type(session) ~= "table" or type(session.session) == "nil" then
+        error("ONNX Runtime session is invalid", 2)
+    end
+
+    if type(image_or_data) ~= "userdata" then
+        error("Expected a Love2D ImageData or Image object for image inpainting", 2)
+    end
+
+    local image_data = image_or_data
+    if image_or_data.typeOf ~= nil and image_or_data:typeOf("Image") then
+        image_data = image_or_data:getData()
+    end
+
+    local input_names, output_names = ensure_session_tensor_names(session)
+    local image_input_name, mask_input_name, output_name = resolve_inpaint_tensor_names(input_names, output_names)
+
+    local src_w = image_data:getWidth()
+    local src_h = image_data:getHeight()
+    local input_w = 512
+    local input_h = 512
+
+    local image_input_buffer = resize_and_pack_rgb(image_data, input_w, input_h, 3)
+    local mask_input_buffer = resize_and_pack_alpha_mask(image_data, input_w, input_h)
+    local image_input_value, mask_input_value, output_value, raw_output, output_dims, output_element_count =
+        run_inpaint_session(session, image_input_name, mask_input_name, output_name, image_input_buffer,
+            mask_input_buffer, input_w, input_h)
+
+    local out_w, out_h, output_channels, output_layout = resolve_image_tensor_layout(output_dims,
+            output_element_count)
+    local output_value_scale = detect_output_value_scale(raw_output, output_element_count)
+    local output_image_data = love.image.newImageData(src_w, src_h)
+
+    print(string.format("Inpaint output size: %dx%d", out_w, out_h))
+
+    for y = 0, src_h - 1 do
+        local sample_y = math.min(out_h - 1, math.floor((y + 0.5) * out_h / src_h))
+        for x = 0, src_w - 1 do
+            local sample_x = math.min(out_w - 1, math.floor((x + 0.5) * out_w / src_w))
+            local source_r, source_g, source_b, source_a = image_data:getPixel(x, y)
+
+            if source_a < 0.5 then
+                local fill_r, fill_g, fill_b = read_tensor_rgb(raw_output, output_layout, output_channels,
+                    out_w, out_h, sample_x, sample_y)
+                output_image_data:setPixel(x, y,
+                    clamp01(fill_r * output_value_scale),
+                    clamp01(fill_g * output_value_scale),
+                    clamp01(fill_b * output_value_scale),
+                    1)
+            else
+                output_image_data:setPixel(x, y, source_r, source_g, source_b, 1)
+            end
+        end
+    end
+
+    release_ort_value(image_input_value)
+    release_ort_value(mask_input_value)
+    release_ort_value(output_value)
 
     if return_image_data then
         return output_image_data

@@ -209,8 +209,10 @@ function Threading.update()
         local message = state.status_channel:pop()
         while message ~= nil do
             local now = love.timer.getTime()
-            local should_keep_previous_message = message == "stopped" and state.last_message and
-                    (state.last_message:match("^remove_background_") or state.last_message:match("^upscale_"))
+                local should_keep_previous_message = message == "stopped" and state.last_message and
+                    (state.last_message:match("^remove_background_") or
+                    state.last_message:match("^upscale_") or
+                    state.last_message:match("^inpaint_"))
             if not should_keep_previous_message then
                 state.last_message = message
             end

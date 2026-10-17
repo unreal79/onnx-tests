@@ -13,6 +13,7 @@ require("utils")
 
 local THREAD_WORKER_PATH = "thread_worker.lua"
 local IMAGE_PATH = "assets/parrot.png"
+local IMAGE_NO_BG_PATH = "assets/parrot_nobg.png"
 
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Archivist_Soft.onnx" -- 7 sec, bad, eats details
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good
@@ -47,7 +48,9 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx"
 local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 4 sec
 
-local MODEL_INPAINTER_PATH = "models/bg_remove/lama_fp32.onnx"
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_.onnx" -- 25 sec
+local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 12 sec
 
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
 local CAMERA_ZOOM_STEP = 1.15
@@ -65,6 +68,7 @@ font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
 local img_parrot = lg.newImage(IMAGE_PATH)
 local img_upscaled = nil
 local img_no_background = nil
+local img_inpainted = nil
 local processing_start_time = nil
 local last_elapsed_seconds = nil
 local active_drag_buttons = 0
@@ -88,6 +92,7 @@ local function apply_screen_filter_mode()
     apply_screen_filter_to_image(img_parrot)
     apply_screen_filter_to_image(img_upscaled)
     apply_screen_filter_to_image(img_no_background)
+    apply_screen_filter_to_image(img_inpainted)
     print("Screen smoothing: " .. mode.label)
 end
 
@@ -154,6 +159,31 @@ local function start_upscale()
 end
 
 
+local function start_inpaint()
+    if Threading.is_running(3) then
+        print_to_screen("Inpaint is already running")
+        return
+    end
+
+    local ok, err = Threading.run(THREAD_WORKER_PATH, 3)
+    if not ok then
+        print_to_screen("Failed to start the worker thread: " .. tostring(err))
+        return
+    end
+
+    local command = string.format("inpaint|%s|%s", MODEL_INPAINTER_PATH, IMAGE_NO_BG_PATH)
+    ok, err = Threading.command(3, command)
+    if not ok then
+        print_to_screen("Failed to queue inpaint: " .. tostring(err))
+        return
+    end
+
+    processing_start_time = love.timer.getTime()
+    last_elapsed_seconds = nil
+    print_to_screen("Started inpainting in a worker thread...")
+end
+
+
 local function final_message_and_save_image(thread_id, image_data, model_path)
     print_to_screen(string.format("ONNX processing time: %.3f seconds",
         love.timer.getTime() - processing_start_time))
@@ -209,8 +239,9 @@ function love.load()
         print_to_screen("Failed to get memory usage")
     end
 
-    start_background_removal()
+    -- start_background_removal()
     -- start_upscale()
+    start_inpaint()
 end
 
 
@@ -219,7 +250,7 @@ function love.update(dt)
     CameraMgr.update(dt)
 
     if processing_start_time then
-        for i = 1, 2 do
+        for i = 1, 3 do
             if Threading.has_crashed(i) then
                 print_to_screen("Worker thread " .. tostring(i) .. " has crashed")
                 processing_start_time = nil
@@ -267,6 +298,22 @@ function love.update(dt)
                 print_to_screen("Image upscaling failed: " .. error_text)
                 final_message_and_save_image(2)
             end
+
+            -- Check messages from worker 3 - inpainting
+            local last_message_3 = Threading.consume_last_message(3)
+            if last_message_3 and last_message_3:match("^inpaint_done:") then
+                local decoded_FileData = love.filesystem.newFileData(love.data.decode("data", "base64",
+                        last_message_3:sub(#"inpaint_done:" + 1)), "_")
+                local output_image_data = love.image.newImageData(decoded_FileData)
+                img_inpainted = lg.newImage(output_image_data)
+                apply_screen_filter_to_image(img_inpainted)
+                print_to_screen("Image inpainted successfully")
+                final_message_and_save_image(3, output_image_data, MODEL_INPAINTER_PATH)
+            elseif last_message_3 and last_message_3:match("^inpaint_error:") then
+                local error_text = last_message_3:sub(#"inpaint_error:" + 1)
+                print_to_screen("Image inpainting failed: " .. error_text)
+                final_message_and_save_image(3)
+            end
         end
     end
 end
@@ -289,6 +336,9 @@ function love.draw()
         end
         if img_no_background then
             lg.draw(img_no_background, 200 + img_parrot:getWidth(), 10)
+        end
+        if img_inpainted then
+            lg.draw(img_inpainted, 200 + img_parrot:getWidth(), 10)
         end
     CameraMgr.detach()
 
