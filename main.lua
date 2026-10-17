@@ -12,6 +12,7 @@ require("libs.errorhandler")
 utf8 = require("utf8")
 Onnx = require("onnx")
 Threading = require("libs.threading")
+CameraMgr = require("libs.CameraMgr.lib.CameraMgr")
 require("utils")
 
 font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
@@ -26,9 +27,29 @@ local MODEL_UPSCALER_PATH = "models/4x-ClearRealityV1.onnx" -- 7 sec
 -- local MODEL_BG_REMOVER_PATH = "models/u2net.onnx" -- 4 sec
 local MODEL_BG_REMOVER_PATH = "models/birefnet-lite-512.onnx" --
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
+local CAMERA_ZOOM_STEP = 1.15
+local CAMERA_MIN_SCALE = 0.2
+local CAMERA_MAX_SCALE = 16
 
 local processing_start_time = nil
 local last_elapsed_seconds = nil
+local camera = CameraMgr.newManager()
+local active_drag_buttons = 0
+local drag_buttons = {}
+
+
+local function set_camera_zoom(new_scale, anchor_x, anchor_y)
+    local camera_x, camera_y = camera.getCoords()
+    local world_x_before, world_y_before = camera.toWorldCoords(anchor_x, anchor_y)
+
+    camera.setScale(new_scale)
+
+    local world_x_after, world_y_after = camera.toWorldCoords(anchor_x, anchor_y)
+    camera.setCoords(
+        camera_x + (world_x_before - world_x_after),
+        camera_y + (world_y_before - world_y_after)
+    )
+end
 
 
 local function start_background_removal()
@@ -81,9 +102,9 @@ local function start_upscale()
 end
 
 
-local function final_message(start_time, thread_id)
+local function final_message(thread_id)
     print_to_screen(string.format("ONNX processing time: %.3f seconds",
-        love.timer.getTime() - start_time))
+        love.timer.getTime() - processing_start_time))
     print_to_screen(string.format("Memory usage - RAM: %d " ..
         "MB, Virtual: %d MB, Peak: %d MB", get_memory_usage()))
     processing_start_time = nil
@@ -94,6 +115,7 @@ end
 
 function love.load()
     math.randomseed( os.time() )
+    camera.setCoords(lg.getWidth() / 2, lg.getHeight() / 2)
 
     print_to_screen("Love2D loaded")
     local working_set, commit_size, peak_working_set = get_memory_usage()
@@ -111,6 +133,7 @@ end
 
 function love.update(dt)
     Threading.update()
+    camera.update(dt)
 
     if processing_start_time then
         for i = 1, 2 do
@@ -137,11 +160,11 @@ function love.update(dt)
                         last_message_1:sub(#"remove_background_done:" + 1)), "_")
                 img_no_background = lg.newImage(decoded_FileData)
                 print_to_screen("Background removed from image successfully")
-                final_message(processing_start_time, 1)
+                final_message(1)
             elseif last_message_1 and last_message_1:match("^remove_background_error:") then
                 local error_text = last_message_1:sub(#"remove_background_error:" + 1)
                 print_to_screen("Background removal failed: " .. error_text)
-                final_message(processing_start_time, 1)
+                final_message(1)
             end
 
             -- Check messages from worker 2 - image upscaling
@@ -151,11 +174,11 @@ function love.update(dt)
                         last_message_2:sub(#"upscale_done:" + 1)), "_")
                 img_upscaled = lg.newImage(decoded_FileData)
                 print_to_screen("Image upscaled successfully")
-                final_message(processing_start_time, 2)
+                final_message(2)
             elseif last_message_2 and last_message_2:match("^upscale_error:") then
                 local error_text = last_message_2:sub(#"upscale_error:" + 1)
                 print_to_screen("Image upscaling failed: " .. error_text)
-                final_message(processing_start_time, 2)
+                final_message(2)
             end
         end
     end
@@ -176,6 +199,8 @@ function love.draw()
 
     lg.clear(0, 0, 1, 1)
     lg.setColor(1, 1, 1, 1)
+
+    camera.attach()
     lg.draw(img_parrot, 200, 10)
     if img_upscaled then
         lg.draw(img_upscaled, 200 + img_parrot:getWidth(), 10)
@@ -183,18 +208,54 @@ function love.draw()
     if img_no_background then
         lg.draw(img_no_background, 200 + img_parrot:getWidth(), 10)
     end
+    camera.detach()
 end
 
 
 function love.mousemoved(x, y, dx, dy, istouch)
+    if active_drag_buttons <= 0 then
+        return
+    end
+
+    local camera_x, camera_y = camera.getCoords()
+    local scale_x, scale_y = camera.getScale()
+    camera.setCoords(camera_x - dx / scale_x, camera_y - dy / scale_y)
 end
 
 
 function love.mousepressed(x, y, button)
+    if drag_buttons[button] then
+        return
+    end
+
+    drag_buttons[button] = true
+    active_drag_buttons = active_drag_buttons + 1
+end
+
+
+function love.mousereleased(x, y, button)
+    if not drag_buttons[button] then
+        return
+    end
+
+    drag_buttons[button] = nil
+    active_drag_buttons = math.max(0, active_drag_buttons - 1)
 end
 
 
 function love.wheelmoved(x, y)
+    if y == 0 then
+        return
+    end
+
+    local current_scale = camera.getScale()
+    local target_scale = math.clamp(current_scale * (CAMERA_ZOOM_STEP ^ y), CAMERA_MIN_SCALE, CAMERA_MAX_SCALE)
+    if target_scale == current_scale then
+        return
+    end
+
+    local mouse_x, mouse_y = love.mouse.getPosition()
+    set_camera_zoom(target_scale, mouse_x, mouse_y)
 end
 
 
