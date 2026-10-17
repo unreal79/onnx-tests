@@ -11,13 +11,9 @@ Threading = require("libs.threading")
 CameraMgr = require("libs.CameraMgr.lib.CameraMgr").newManager()
 require("utils")
 
-font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
-
 local THREAD_WORKER_PATH = "thread_worker.lua"
 local IMAGE_PATH = "assets/parrot.png"
-local img_parrot = lg.newImage(IMAGE_PATH)
-local img_upscaled = nil
-local img_no_background = nil
+
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Archivist_Soft.onnx" -- 7 sec, bad, eats details
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Restoration-jpg-ESRGAN_64nf_23nb-jpg40_60-vyls.onnx" -- 200 sec, x1, very good
@@ -30,7 +26,7 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx"
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-SuperScale_Alt_RPLKSR_S.onnx" -- 40 sec, x1, average
 -- local MODEL_UPSCALER_PATH = "models/upscale/4x_foolhardy_Remacri.onnx" -- 220 sec, x4, average, too sharp
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-RealPLSKR.onnx" -- 118 sec, x4, slow, bad tile
--- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-Span.onnx" -- 8 sec, x4, very good, darkens
+-- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-Span.onnx" -- 8 sec, x4, very good, darkens image
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xLSDIRCompactv2.onnx" -- 8 sec, x4, average
 -- local MODEL_UPSCALER_PATH = "models/upscale/ArtCNN_R8F64_RGB.onnx" -- 12 sec, x2, average
 -- local MODEL_UPSCALER_PATH = "models/upscale/hdrtvnetpp_ensemble_dynamic.onnx" -- 4 sec, x1, bad BT.2020 color output
@@ -46,8 +42,13 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx"
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_scale2x.onnx" -- 4 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
-local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" --
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 15 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 50 sec
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 4 sec
+
+local MODEL_INPAINTER_PATH = "models/bg_remove/lama_fp32.onnx"
+
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
 local CAMERA_ZOOM_STEP = 1.15
 local CAMERA_MIN_SCALE = 0.2
@@ -59,6 +60,11 @@ local SCREEN_FILTER_MODES = {
     { label = "Nearest min / Linear mag", min = "nearest", mag = "linear" },
 }
 
+font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
+
+local img_parrot = lg.newImage(IMAGE_PATH)
+local img_upscaled = nil
+local img_no_background = nil
 local processing_start_time = nil
 local last_elapsed_seconds = nil
 local active_drag_buttons = 0
@@ -164,7 +170,7 @@ local function final_message_and_save_image(thread_id, image_data, model_path)
     local absolute_output_dir = absolute_output_path:match("^(.+)/[^/]+$")
     local normalized_output_dir = absolute_output_dir:gsub("/", package.config:sub(1, 1))
 
-    local ok, result = pcall(function()
+    local ok, err_or_result = pcall(function()
         print("Saving processed image to: " .. absolute_output_path)
         print("Creating output directory: " .. normalized_output_dir)
         local f, err = io.popen("mkdir " .. normalized_output_dir)
@@ -184,7 +190,7 @@ local function final_message_and_save_image(thread_id, image_data, model_path)
     if ok then
         print("Saved processed image to: " .. output_path)
     else
-        print("Failed to save processed image: " .. tostring(result))
+        print("Failed to save processed image: " .. tostring(err_or_result))
     end
 end
 
@@ -203,8 +209,8 @@ function love.load()
         print_to_screen("Failed to get memory usage")
     end
 
-    -- start_background_removal()
-    start_upscale()
+    start_background_removal()
+    -- start_upscale()
 end
 
 
@@ -274,6 +280,7 @@ end
 function love.draw()
     lg.clear(0, 0, 1, 1)
     lg.setColor(1, 1, 1, 1)
+    lg.setFont(font_mplusrounded14)
 
     CameraMgr.attach()
         lg.draw(img_parrot, 200, 10)
