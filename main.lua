@@ -1,8 +1,4 @@
 -- main.lua
-if arg[2] == "debug" then
-    require("lldebugger").start() -- WARNING: hangs Love2D ?
-end
-
 lg = love.graphics
 la = love.audio
 
@@ -12,7 +8,7 @@ require("libs.errorhandler")
 utf8 = require("utf8")
 Onnx = require("onnx")
 Threading = require("libs.threading")
-CameraMgr = require("libs.CameraMgr.lib.CameraMgr")
+CameraMgr = require("libs.CameraMgr.lib.CameraMgr").newManager()
 require("utils")
 
 font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
@@ -22,10 +18,35 @@ local IMAGE_PATH = "assets/parrot.png"
 local img_parrot = lg.newImage(IMAGE_PATH)
 local img_upscaled = nil
 local img_no_background = nil
-local MODEL_UPSCALER_PATH = "models/4x-ClearRealityV1.onnx" -- 7 sec
--- local MODEL_UPSCALER_PATH = "models/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec
--- local MODEL_BG_REMOVER_PATH = "models/u2net.onnx" -- 4 sec
-local MODEL_BG_REMOVER_PATH = "models/birefnet-lite-512.onnx" --
+local MODEL_UPSCALER_PATH = "models/upscale/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.onnx" -- sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/1x-Archivist_Soft.onnx" -- 7 sec, bad, eats details
+-- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good
+-- local MODEL_UPSCALER_PATH = "models/upscale/1x-Restoration-jpg-ESRGAN_64nf_23nb-jpg40_60-vyls.onnx" -- 200 sec, x1, very good
+local MODEL_UPSCALER_PATH = "models/upscale/1x-SuperScale_Alt_RPLKSR_S.onnx" -- 40 sec, x1, very good
+-- local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, very good
+-- local MODEL_UPSCALER_PATH = "models/upscale/4x_foolhardy_Remacri.onnx" -- 220 sec, x4, average, too sharp
+-- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-RealPLSKR.onnx" -- 118 sec, x4, slow, bad tile
+-- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-Span.onnx" -- 8 sec, x4, very good, darkens
+-- local MODEL_UPSCALER_PATH = "models/upscale/4xLSDIRCompactv2.onnx" -- 8 sec, x4, average
+-- local MODEL_UPSCALER_PATH = "models/upscale/ArtCNN_R8F64_RGB.onnx" -- 12 sec, x2, average
+-- local MODEL_UPSCALER_PATH = "models/upscale/hdrtvnetpp_ensemble_dynamic.onnx" -- 4 sec, x1, bad BT.2020 color output
+-- local MODEL_UPSCALER_PATH = "models/upscale/BSRGAN.onnx" -- 235 sec, x4, good, fixes JPEG halo
+-- local MODEL_UPSCALER_PATH = "models/upscale/BSRGANx2.onnx" -- 230 sec, x2, good, fixes JPEG halo
+-- local MODEL_UPSCALER_PATH = "models/upscale/BSRNet.onnx" -- 230 sec, x4, good, fixes JPEG halo
+-- local MODEL_UPSCALER_PATH = "models/upscale/realesr-general-wdn-x4v3.onnx" -- 15 sec, x4,very good
+-- local MODEL_UPSCALER_PATH = "models/upscale/up4x_latest_conservative.onnx" -- 20 sec, x4, average
+-- local MODEL_UPSCALER_PATH = "models/upscale/upscayl-remacri-4x.onnx" -- 230 sec, x4, average, too sharp
+-- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_noise0.onnx" -- 4 sec, x1, very good
+-- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_noise3.onnx" -- 4 sec, x1, very good
+-- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_scale2x.onnx" -- 4 sec, x1, very good
+-- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
+-- local MODEL_UPSCALER_PATH = "models/upscale/" -- sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/" -- sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/" -- sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/" -- sec
+
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" --
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
 local CAMERA_ZOOM_STEP = 1.15
 local CAMERA_MIN_SCALE = 0.2
@@ -33,23 +54,8 @@ local CAMERA_MAX_SCALE = 16
 
 local processing_start_time = nil
 local last_elapsed_seconds = nil
-local camera = CameraMgr.newManager()
 local active_drag_buttons = 0
 local drag_buttons = {}
-
-
-local function set_camera_zoom(new_scale, anchor_x, anchor_y)
-    local camera_x, camera_y = camera.getCoords()
-    local world_x_before, world_y_before = camera.toWorldCoords(anchor_x, anchor_y)
-
-    camera.setScale(new_scale)
-
-    local world_x_after, world_y_after = camera.toWorldCoords(anchor_x, anchor_y)
-    camera.setCoords(
-        camera_x + (world_x_before - world_x_after),
-        camera_y + (world_y_before - world_y_after)
-    )
-end
 
 
 local function start_background_removal()
@@ -102,7 +108,7 @@ local function start_upscale()
 end
 
 
-local function final_message(thread_id)
+local function final_message_and_save_image(thread_id, image_data, model_path)
     print_to_screen(string.format("ONNX processing time: %.3f seconds",
         love.timer.getTime() - processing_start_time))
     print_to_screen(string.format("Memory usage - RAM: %d " ..
@@ -110,12 +116,42 @@ local function final_message(thread_id)
     processing_start_time = nil
     last_elapsed_seconds = nil
     Threading.stop(thread_id)
+
+    if image_data == nil then return end
+
+    local output_path = model_path:gsub("^models/", "_output/"):gsub("%.onnx$", ".png")
+    local absolute_output_path = love.filesystem.getSource() .. "/" .. output_path
+    local absolute_output_dir = absolute_output_path:match("^(.+)/[^/]+$")
+    local normalized_output_dir = absolute_output_dir:gsub("/", package.config:sub(1, 1))
+
+    local ok, result = pcall(function()
+        print("Saving processed image to: " .. absolute_output_path)
+        print("Creating output directory: " .. normalized_output_dir)
+        local f, err = io.popen("mkdir " .. normalized_output_dir)
+        love.timer.sleep(0.1)
+        if f == nil then
+            print("Failed to create subprocess: " .. tostring(err))
+        else
+            f:close()
+        end
+        local encoded_file_data = image_data:encode("png")
+        local output_file = assert(io.open(absolute_output_path, "wb"))
+        output_file:write(encoded_file_data:getString())
+        output_file:close()
+        return absolute_output_path
+    end)
+
+    if ok then
+        print("Saved processed image to: " .. output_path)
+    else
+        print("Failed to save processed image: " .. tostring(result))
+    end
 end
 
 
 function love.load()
     math.randomseed( os.time() )
-    camera.setCoords(lg.getWidth() / 2, lg.getHeight() / 2)
+    CameraMgr.setCoords(lg.getWidth() / 2, lg.getHeight() / 2)
 
     print_to_screen("Love2D loaded")
     local working_set, commit_size, peak_working_set = get_memory_usage()
@@ -133,7 +169,7 @@ end
 
 function love.update(dt)
     Threading.update()
-    camera.update(dt)
+    CameraMgr.update(dt)
 
     if processing_start_time then
         for i = 1, 2 do
@@ -158,27 +194,29 @@ function love.update(dt)
             if last_message_1 and last_message_1:match("^remove_background_done:") then
                 local decoded_FileData = love.filesystem.newFileData(love.data.decode("data", "base64",
                         last_message_1:sub(#"remove_background_done:" + 1)), "_")
-                img_no_background = lg.newImage(decoded_FileData)
+                local output_image_data = love.image.newImageData(decoded_FileData)
+                img_no_background = lg.newImage(output_image_data)
                 print_to_screen("Background removed from image successfully")
-                final_message(1)
+                final_message_and_save_image(1, output_image_data, MODEL_BG_REMOVER_PATH)
             elseif last_message_1 and last_message_1:match("^remove_background_error:") then
                 local error_text = last_message_1:sub(#"remove_background_error:" + 1)
                 print_to_screen("Background removal failed: " .. error_text)
-                final_message(1)
+                final_message_and_save_image(1)
             end
 
-            -- Check messages from worker 2 - image upscaling
+            -- Check messages from worker 2 - upscaling/restoring
             local last_message_2 = Threading.consume_last_message(2)
             if last_message_2 and last_message_2:match("^upscale_done:") then
                 local decoded_FileData = love.filesystem.newFileData(love.data.decode("data", "base64",
                         last_message_2:sub(#"upscale_done:" + 1)), "_")
-                img_upscaled = lg.newImage(decoded_FileData)
+                local output_image_data = love.image.newImageData(decoded_FileData)
+                img_upscaled = lg.newImage(output_image_data)
                 print_to_screen("Image upscaled successfully")
-                final_message(2)
+                final_message_and_save_image(2, output_image_data, MODEL_UPSCALER_PATH)
             elseif last_message_2 and last_message_2:match("^upscale_error:") then
                 local error_text = last_message_2:sub(#"upscale_error:" + 1)
                 print_to_screen("Image upscaling failed: " .. error_text)
-                final_message(2)
+                final_message_and_save_image(2)
             end
         end
     end
@@ -191,24 +229,18 @@ end
 
 
 function love.draw()
-    -- if processing_start_time then
-    --     -- lg.print(string.format("Background removal timer: %d seconds", last_elapsed_seconds or 0), 10, 10)
-    --     return
-    -- end
-    -- lg.print(love.graphics.getStats().drawcalls, 10, 10)
-
     lg.clear(0, 0, 1, 1)
     lg.setColor(1, 1, 1, 1)
 
-    camera.attach()
-    lg.draw(img_parrot, 200, 10)
-    if img_upscaled then
-        lg.draw(img_upscaled, 200 + img_parrot:getWidth(), 10)
-    end
-    if img_no_background then
-        lg.draw(img_no_background, 200 + img_parrot:getWidth(), 10)
-    end
-    camera.detach()
+    CameraMgr.attach()
+        lg.draw(img_parrot, 200, 10)
+        if img_upscaled then
+            lg.draw(img_upscaled, 200 + img_parrot:getWidth(), 10)
+        end
+        if img_no_background then
+            lg.draw(img_no_background, 200 + img_parrot:getWidth(), 10)
+        end
+    CameraMgr.detach()
 end
 
 
@@ -217,9 +249,9 @@ function love.mousemoved(x, y, dx, dy, istouch)
         return
     end
 
-    local camera_x, camera_y = camera.getCoords()
-    local scale_x, scale_y = camera.getScale()
-    camera.setCoords(camera_x - dx / scale_x, camera_y - dy / scale_y)
+    local camera_x, camera_y = CameraMgr.getCoords()
+    local scale_x, scale_y = CameraMgr.getScale()
+    CameraMgr.setCoords(camera_x - dx / scale_x, camera_y - dy / scale_y)
 end
 
 
@@ -248,7 +280,7 @@ function love.wheelmoved(x, y)
         return
     end
 
-    local current_scale = camera.getScale()
+    local current_scale = CameraMgr.getScale()
     local target_scale = math.clamp(current_scale * (CAMERA_ZOOM_STEP ^ y), CAMERA_MIN_SCALE, CAMERA_MAX_SCALE)
     if target_scale == current_scale then
         return

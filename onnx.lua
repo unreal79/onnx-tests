@@ -251,10 +251,6 @@ local function check(status, action)
         return
     end
 
-    if State.api == nil or type(State.api.GetErrorCode) ~= "function" or type(State.api.GetErrorMessage) ~= "function" then
-        error(string.format("ONNX Runtime %s failed, but the API table is unavailable or incomplete", action), 2)
-    end
-
     local err_code = tonumber(State.api.GetErrorCode(status)) or -1
     local err_ptr = State.api.GetErrorMessage(status)
     local err_msg = err_ptr ~= nil and ffi.string(err_ptr) or "Unknown ONNX Runtime error"

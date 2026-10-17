@@ -337,3 +337,15 @@ function deep_copy(original)
 end
 
 
+function set_camera_zoom(new_scale, anchor_x, anchor_y)
+    local camera_x, camera_y = CameraMgr.getCoords()
+    local world_x_before, world_y_before = CameraMgr.toWorldCoords(anchor_x, anchor_y)
+
+    CameraMgr.setScale(new_scale)
+
+    local world_x_after, world_y_after = CameraMgr.toWorldCoords(anchor_x, anchor_y)
+    CameraMgr.setCoords(
+        camera_x + (world_x_before - world_x_after),
+        camera_y + (world_y_before - world_y_after)
+    )
+end
