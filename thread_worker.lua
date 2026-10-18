@@ -103,6 +103,8 @@ local function worker2_onnx_upscale(step, command)
 
         local model_path = commands[2]
         local image_path = commands[3]
+        local tile_size = tonumber(commands[4])
+        local tile_overlap = tonumber(commands[5])
 
         send_status("upscale_start") -- hardcoded
 
@@ -120,7 +122,7 @@ local function worker2_onnx_upscale(step, command)
             print(session.message)
 
             local image_data = love.image.newImageData(image_path)
-            local output_image_data = Onnx.upscale(session, image_data, true)
+            local output_image_data = Onnx.upscale(session, image_data, true, tile_size, tile_overlap)
             return output_image_data:encode("tga", nil)
         end, debug.traceback)
 

@@ -486,11 +486,11 @@ local function infer_model_input_size(input_shape)
             channel_count = shape[2]
             target_w = shape[4]
             target_h = shape[3]
-            if channel_count > target_w then
+            if channel_count > target_w and channel_count > 5 then
                 target_w, channel_count = channel_count, target_w
                 print(string.format("Swapped target_w and channel_count: target_w=%d, channel_count=%d",
                         target_w, channel_count))
-            elseif channel_count > target_h then
+            elseif channel_count > target_h and channel_count > 5 then
                 target_h, channel_count = channel_count, target_h
                 print(string.format("Swapped target_h and channel_count: target_h=%d, channel_count=%d",
                         target_h, channel_count))
@@ -1316,17 +1316,17 @@ function Onnx.inpaint(session, image_or_data, alpha_threshold, return_image_data
 end
 
 
---- Runs the super-resolution model over an image using overlapped 200x200 tiles.
+--- Runs the super-resolution model over an image using overlapped 256x256 tiles.
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to upscale.
 --- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.
---- @param tile_size number|nil # The size of the tiles to use for upscaling. Defaults to 200.
---- @param tile_overlap number|nil # The overlap between tiles. Defaults to 24.
+--- @param tile_size number|nil # The size of the tiles to use for upscaling. Defaults to 256.
+--- @param tile_overlap number|nil # The overlap between tiles. Defaults to 32.
 --- @return love.Image|love.ImageData # Upscaled image assembled from model tiles.
 function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile_overlap)
     return_image_data = return_image_data == true
-    tile_size = tile_size or 200
-    tile_overlap = tile_overlap or 24
+    tile_size = tile_size or 256
+    tile_overlap = tile_overlap or 32
     if type(session) ~= "table" or type(session.session) == "nil" then
         error("ONNX Runtime session is invalid", 2)
     end

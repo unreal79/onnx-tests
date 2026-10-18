@@ -1,7 +1,7 @@
 -- main.lua
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal"
-local WORKING_MODE = "background_removal"
+local WORKING_MODE = "upscaling"
 
 lg = love.graphics
 la = love.audio
@@ -19,12 +19,12 @@ local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
 
 ---- Models. Uncomment the one you want to use for upscaling.
+local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Archivist_Soft.onnx" -- 7 sec, bad, eats details
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Restoration-jpg-ESRGAN_64nf_23nb-jpg40_60-vyls.onnx" -- 200 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xNomos2_realplksr_dysample_256_fp32_fullyoptimized.onnx" -- 200 sec, x8, very bad
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xNomosWebPhoto_RealPLKSR.onnx" -- 110 sec, x4, ADVANCED, sharp
-local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED
 -- local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx" -- 8 sec, x4, ADVANCED
 -- local MODEL_UPSCALER_PATH = "models/upscale/4x-UltraSharp-fp32-opset17.onnx" -- 220 sec, x4, ADVANCED, sharp
 -- local MODEL_UPSCALER_PATH = "models/upscale/4x-UltraSharpV2_Lite_fp32_op17.onnx" -- 110 sec, x4, ADVANCED, creates halo inside
@@ -47,8 +47,12 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_scale2x.onnx" -- 4 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
-local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 15 sec
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 50 sec
+local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- TODO
+
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, average RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 50 sec, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite_fp16.onnx" -- 70 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_fp16.onnx" -- 75 sec, very RAM hungry
@@ -59,10 +63,9 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 15 se
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg-1-4_quantized.onnx" -- 5 sec, very bad result
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg.onnx" -- 5 sec, very bad result
 
--- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec
--- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_.onnx" -- 25 sec
--- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 10 sec
 local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 10 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama-manga-dynamic.onnx" -- 25 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_js.onnx" -- 10 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_1024.onnx" -- 58 sec
@@ -70,6 +73,9 @@ local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25
 
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
 local INPAINTER_ALPHA_THRESHOLD = 0.25
+local UPSCALER_TILE_SIZE = 256
+local UPSCALER_TILE_OVERLAP = 32
+
 local CAMERA_ZOOM_STEP = 1.15
 local CAMERA_MIN_SCALE = 0.2
 local CAMERA_MAX_SCALE = 16
@@ -164,7 +170,8 @@ local function start_upscale()
         return
     end
 
-    local command = string.format("upscale|%s|%s", MODEL_UPSCALER_PATH, IMAGE_PATH)
+    local command = string.format("upscale|%s|%s|%s|%s", MODEL_UPSCALER_PATH, IMAGE_PATH,
+            tostring(UPSCALER_TILE_SIZE), tostring(UPSCALER_TILE_OVERLAP))
     ok, err = Threading.command(2, command)
     if not ok then
         print_to_screen("Failed to queue upscale: " .. tostring(err))
