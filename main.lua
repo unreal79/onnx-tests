@@ -1,7 +1,7 @@
 -- main.lua
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal"
-local WORKING_MODE = "background_removal"
+local WORKING_MODE = "inpainting"
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
@@ -42,7 +42,7 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 se
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 50 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite_fp16.onnx" -- 70 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
-local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_fp16.onnx" -- 75 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_quantized.onnx" -- 100 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_int8.onnx" -- 110 sec, very RAM hungry
@@ -60,7 +60,7 @@ local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_2048.onnx" -- 250 sec, very RAM hungry
 
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
-local INPAINTER_ALPHA_THRESHOLD = 0.25
+local INPAINTER_ALPHA_THRESHOLD = 0.001
 local UPSCALER_TILE_SIZE = 256
 local UPSCALER_TILE_OVERLAP = 32
 
@@ -89,6 +89,7 @@ lg = love.graphics
 la = love.audio
 
 local img_parrot = lg.newImage(IMAGE_PATH) -- Main input image
+local img_parrot_with_holes = lg.newImage(IMAGE_WITH_HOLES_PATH)
 local img_no_background = nil -- output image after background removal
 local img_upscaled = nil -- output image after upscaling
 local img_inpainted = nil -- output image after inpainting
@@ -359,12 +360,30 @@ end
 
 
 function love.draw()
-    lg.clear(0, 0, 1, 1)
+    lg.clear(0.85, 0.85, 0.85, 1)
+    local checker_size = 10
+    local screen_width = lg.getWidth()
+    local screen_height = lg.getHeight()
+
+    for y = 0, screen_height, checker_size do
+        for x = 0, screen_width, checker_size do
+            if ((x / checker_size) + (y / checker_size)) % 2 == 0 then
+                lg.setColor(0.85, 0.85, 0.85, 1)
+            else
+                lg.setColor(0.65, 0.65, 0.65, 1)
+            end
+            lg.rectangle("fill", x, y, checker_size, checker_size)
+        end
+    end
+
     lg.setColor(1, 1, 1, 1)
     lg.setFont(font_mplusrounded14)
 
     CameraMgr.attach()
         lg.draw(img_parrot, 200, 10)
+        if WORKING_MODE == "inpainting" then
+            lg.draw(img_parrot_with_holes, 200 + img_parrot:getWidth(), 10)
+        end
         if img_upscaled then
             lg.draw(img_upscaled, 200 + img_parrot:getWidth(), 10)
         end
@@ -372,7 +391,7 @@ function love.draw()
             lg.draw(img_no_background, 200 + img_parrot:getWidth(), 10)
         end
         if img_inpainted then
-            lg.draw(img_inpainted, 200 + img_parrot:getWidth(), 10)
+            lg.draw(img_inpainted, 200 + img_parrot:getWidth() + img_parrot_with_holes:getWidth(), 10)
         end
     CameraMgr.detach()
 
