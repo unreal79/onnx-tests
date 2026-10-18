@@ -1,7 +1,7 @@
 -- main.lua
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
-local WORKING_MODE = "colorizing"
+local WORKING_MODE = "background_removal"
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
@@ -40,14 +40,15 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
 local MODEL_COLORIZER_TYPE = "ddcolor" -- possible values: "colorize", "deoldify", "ddcolor"
-local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_modelscope.onnx" -- 17/19 sec, good, RAM hungry
--- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_artistic.onnx" -- 17/25 sec, very good, but very small bugs, RAM hungry
--- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_paper_tiny.onnx" -- 6/ sec, good, but small bugs
+local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_modelscope.onnx" -- 17/19 sec, very good, RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_artistic.onnx" -- 17/25 sec, good, but very small bugs, RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_paper_tiny.onnx" -- 6/6 sec, ok, but small bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-fp16.onnx" -- 3/3 sec, ok, but small bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/colorear_v1.onnx" -- 3/3 sec, ok, but small bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 20/48 sec, bad results -- results for small/medium Eiffel images
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 26/97 sec, average RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyStable_dyn.onnx" -- 33/155 sec, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeoldifyVideo_dyn.onnx" -- 32/81 sec, RAM hungry
--- local MODEL_COLORIZER_PATH = "models/colorize/v6_generator.onnx" -- add appropriate comment if needed
 
 local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, average RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry
@@ -62,6 +63,7 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 se
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg-1-4.onnx" -- 5 sec, very bad result
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg-1-4_quantized.onnx" -- 5 sec, very bad result
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg.onnx" -- 5 sec, very bad result
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/quitar_fondo_v2.onnx" -- 30 sec, threshold dependent, very RAM hungry
 
 local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec

@@ -1,3 +1,6 @@
 manga-colorize-fp16.onnx: https://huggingface.co/Faridzar/manga-colorization-v2-onnx
 DeOldifyArtistic_dyn.onnx, DeOldifyStable_dyn.onnx, DeoldifyVideo_dyn.onnx: https://github.com/instant-high/deoldify-onnx > https://drive.google.com/drive/folders/1bU9Zj7zGVEujIzvDTb1b9cyWU3s__WQR renamed
 ddcolor_artistic.onnx, ddcolor_modelscope.onnx, ddcolor_paper_tiny.onnx: https://github.com/instant-high/DDColor-onnx > https://drive.google.com/file/d/1R05w65qEWW_H4lcW1NdfcqAEPdWvjqEW/view?usp=sharing
+ddcolor-fp16.onnx: https://huggingface.co/wavespeed/image-colorizer/tree/main
+colorear_v1.onnx: https://huggingface.co/ingmebs/bspicture-modelos/tree/main
+TODO: https://github.com/dan64/vs-havc - merge results of DeOldify + DDColor gives best result

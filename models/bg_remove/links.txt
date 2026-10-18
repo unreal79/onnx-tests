@@ -11,6 +11,7 @@ IS-Net: https://huggingface.co/BritishWerewolf/IS-Net/tree/main/onnx
 isnet-general-use.onnx: https://huggingface.co/SacredNoir/isnet-general-use-onnx/tree/main
 isnet-general-use-fp16.onnx: https://huggingface.co/tiper-penta/isnet-general-use-fp16/tree/main
 isnet-general-use-fp16_.onnx: https://huggingface.co/RolexAvengers/framers-isnet/tree/main
+quitar_fondo_v2.onnx: https://huggingface.co/ingmebs/bspicture-modelos IS-net based, threshold dependent
 Lucida models: https://huggingface.co/PinkPixel/lucida-onnx/tree/main
 RMBG-2.0_fp16.onnx, RMBG-2.0_int8.onnx, RMBG-2.0_quantized.onnx: https://huggingface.co/baby2008/RMBG-2.0-ONNX/tree/main/onnx
 rmbg-1-4.onnx, rmbg-1-4_quantized.onnx: https://huggingface.co/imgdesignart/rmbg-1-4-onnx/tree/main/onnx bad results
