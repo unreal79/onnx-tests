@@ -218,6 +218,7 @@ local function worker4_onnx_colorize(step, command)
 
         local model_path = commands[2]
         local image_path = commands[3]
+        local model_type = commands[4] or "colorize"
 
         send_status("colorize_start") -- hardcoded
 
@@ -235,7 +236,7 @@ local function worker4_onnx_colorize(step, command)
             print(session.message)
 
             local image_data = love.image.newImageData(image_path)
-            local output_image_data = Onnx.colorize(session, image_data, true)
+            local output_image_data = Onnx.colorize(session, image_data, true, model_type)
             return output_image_data:encode("tga", nil)
         end, debug.traceback)
 

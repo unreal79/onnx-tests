@@ -711,16 +711,31 @@ local function round_up_to_multiple(value, multiple)
 end
 
 
+--- Resolves the colorizer family from a user-provided type.
+--- @param model_kind string|nil # User-selected type from MODEL_COLORIZER_TYPE.
+--- @return string # One of `colorize`, `deoldify`, or `ddcolor`.
+local function resolve_colorizer_model_kind(model_kind)
+    local normalized_kind = type(model_kind) == "string" and model_kind:lower() or "colorize"
+
+    if normalized_kind == "deoldify" or normalized_kind == "ddcolor" then
+        return normalized_kind
+    end
+
+    return "colorize"
+end
+
+
 --- Resolves the runtime input size for the current colorizer model.
 --- The manga colorizer expects `[1,5,H,W]` with height and width divisible by 32.
 --- DeOldify ONNX models also require runtime dimensions divisible by 32.
 --- @param input_shape table|nil # ONNX input shape list.
 --- @param fallback_w integer # Source image width.
 --- @param fallback_h integer # Source image height.
+--- @param model_kind string # Resolved colorizer family.
 --- @return number # Runtime width.
 --- @return number # Runtime height.
 --- @return number # Runtime channel count.
-local function resolve_colorizer_input_size(input_shape, fallback_w, fallback_h)
+local function resolve_colorizer_input_size(input_shape, fallback_w, fallback_h, model_kind)
     local target_w, target_h, channel_count = infer_model_input_size(input_shape)
 
     if type(input_shape) == "table" and #input_shape >= 4 then
@@ -732,6 +747,97 @@ local function resolve_colorizer_input_size(input_shape, fallback_w, fallback_h)
     end
 
     return round_up_to_multiple(fallback_w, 32), round_up_to_multiple(fallback_h, 32), channel_count
+end
+
+
+local function srgb_to_linear(value)
+    if value <= 0.04045 then
+        return value / 12.92
+    end
+
+    return ((value + 0.055) / 1.055) ^ 2.4
+end
+
+
+local function linear_to_srgb(value)
+    value = math.max(0, math.min(1, value))
+    if value <= 0.0031308 then
+        return value * 12.92
+    end
+
+    return (1.055 * (value ^ (1 / 2.4))) - 0.055
+end
+
+
+local function lab_f(value)
+    if value > 0.0088564516790356 then
+        return value ^ (1 / 3)
+    end
+
+    return (7.787037037037 * value) + (16 / 116)
+end
+
+
+local function lab_f_inverse(value)
+    local value_cube = value * value * value
+    if value_cube > 0.0088564516790356 then
+        return value_cube
+    end
+
+    return (value - (16 / 116)) / 7.787037037037
+end
+
+
+--- Converts an sRGB pixel in the [0, 1] range to CIE Lab.
+--- @param r number # Red channel.
+--- @param g number # Green channel.
+--- @param b number # Blue channel.
+--- @return number # L component.
+--- @return number # a component.
+--- @return number # b component.
+local function rgb_to_lab(r, g, b)
+    local linear_r = srgb_to_linear(math.clamp(r, 0, 1))
+    local linear_g = srgb_to_linear(math.clamp(g, 0, 1))
+    local linear_b = srgb_to_linear(math.clamp(b, 0, 1))
+
+    local x = (linear_r * 0.4124564) + (linear_g * 0.3575761) + (linear_b * 0.1804375)
+    local y = (linear_r * 0.2126729) + (linear_g * 0.7151522) + (linear_b * 0.0721750)
+    local z = (linear_r * 0.0193339) + (linear_g * 0.1191920) + (linear_b * 0.9503041)
+
+    local fx = lab_f(x / 0.95047)
+    local fy = lab_f(y)
+    local fz = lab_f(z / 1.08883)
+
+    local l = (116 * fy) - 16
+    local a = 500 * (fx - fy)
+    local lab_b = 200 * (fy - fz)
+    return l, a, lab_b
+end
+
+
+--- Converts a CIE Lab pixel to sRGB in the [0, 1] range.
+--- @param l number # L component.
+--- @param a number # a component.
+--- @param b number # b component.
+--- @return number # Red channel.
+--- @return number # Green channel.
+--- @return number # Blue channel.
+local function lab_to_rgb(l, a, b)
+    local fy = (l + 16) / 116
+    local fx = fy + (a / 500)
+    local fz = fy - (b / 200)
+
+    local x = 0.95047 * lab_f_inverse(fx)
+    local y = lab_f_inverse(fy)
+    local z = 1.08883 * lab_f_inverse(fz)
+
+    local linear_r = (x * 3.2404542) + (y * -1.5371385) + (z * -0.4985314)
+    local linear_g = (x * -0.9692660) + (y * 1.8760108) + (z * 0.0415560)
+    local linear_b = (x * 0.0556434) + (y * -0.2040259) + (z * 1.0572252)
+
+    return math.clamp(linear_to_srgb(linear_r), 0, 1),
+            math.clamp(linear_to_srgb(linear_g), 0, 1),
+            math.clamp(linear_to_srgb(linear_b), 0, 1)
 end
 
 
@@ -848,18 +954,21 @@ end
 --- Packs a grayscale image for the current colorizer input tensor.
 --- For the manga colorizer, ch0 = grayscale 0..1 and hint channels stay zeroed.
 --- For DeOldify, grayscale is replicated into 3 RGB planes in the 0..255 range.
+--- For DDColor, grayscale is converted through neutral Lab and kept in RGB 0..1.
 --- @param image_data any # Love2D ImageData object.
 --- @param target_w integer # Runtime input width.
 --- @param target_h integer # Runtime input height.
 --- @param channel_count integer # Number of channels expected by the model.
+--- @param model_kind string # Resolved colorizer family.
 --- @return any # Float buffer in NCHW layout.
-local function resize_and_pack_colorizer_input(image_data, target_w, target_h, channel_count)
+local function resize_and_pack_colorizer_input(image_data, target_w, target_h, channel_count, model_kind)
     local src_w = image_data:getWidth()
     local src_h = image_data:getHeight()
     local float_buffer_size = target_w * target_h * channel_count
     local float_buffer = ffi.new("float[?]", float_buffer_size)
     local max_x = src_w - 1
     local max_y = src_h - 1
+    local plane_size = target_w * target_h
 
     for y = 0, target_h - 1 do
         local src_y = math.min(max_y, math.floor((y + 0.5) * src_h / target_h))
@@ -869,9 +978,14 @@ local function resize_and_pack_colorizer_input(image_data, target_w, target_h, c
             local pixel_index = y * target_w + x
             local grayscale = math.clamp((r * 0.299) + (g * 0.587) + (b * 0.114), 0, 1)
 
-            if channel_count == 3 then
+            if model_kind == "ddcolor" then
+                local lightness = select(1, rgb_to_lab(r, g, b))
+                local gray_r, gray_g, gray_b = lab_to_rgb(lightness, 0, 0)
+                float_buffer[pixel_index] = gray_r
+                float_buffer[plane_size + pixel_index] = gray_g
+                float_buffer[(plane_size * 2) + pixel_index] = gray_b
+            elseif channel_count == 3 then
                 local grayscale_255 = grayscale * 255.0
-                local plane_size = target_w * target_h
                 float_buffer[pixel_index] = grayscale_255
                 float_buffer[plane_size + pixel_index] = grayscale_255
                 float_buffer[(plane_size * 2) + pixel_index] = grayscale_255
@@ -1063,6 +1177,27 @@ local function read_tensor_rgb(tensor_data, layout, channel_count, image_w, imag
 
     local value = tensor_data[pixel_index]
     return value, value, value
+end
+
+
+--- Reads an ab pixel pair from an ONNX output tensor.
+--- @param tensor_data any # Float pointer to tensor data.
+--- @param layout string # Tensor layout descriptor.
+--- @param image_w integer # Tensor image width.
+--- @param image_h integer # Tensor image height.
+--- @param x integer # Pixel X coordinate.
+--- @param y integer # Pixel Y coordinate.
+--- @return number # a component.
+--- @return number # b component.
+local function read_tensor_ab(tensor_data, layout, image_w, image_h, x, y)
+    local pixel_index = y * image_w + x
+    if layout == "nchw" then
+        local plane_size = image_w * image_h
+        return tensor_data[pixel_index], tensor_data[plane_size + pixel_index]
+    end
+
+    local base_index = pixel_index * 2
+    return tensor_data[base_index], tensor_data[base_index + 1]
 end
 
 
@@ -1342,12 +1477,13 @@ function Onnx.inpaint(session, image_or_data, alpha_threshold, return_image_data
 end
 
 
---- Runs the manga colorizer model on a grayscale image.
+--- Runs the selected colorizer model on a grayscale image.
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to colorize.
 --- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.
+--- @param model_kind string|nil # User-selected colorizer type: `colorize`, `deoldify`, or `ddcolor`.
 --- @return love.Image|love.ImageData # Colorized image.
-function Onnx.colorize(session, image_or_data, return_image_data)
+function Onnx.colorize(session, image_or_data, return_image_data, model_kind)
     return_image_data = return_image_data == true
     if type(session) ~= "table" or type(session.session) == "nil" then
         error("ONNX Runtime session is invalid", 2)
@@ -1372,9 +1508,13 @@ function Onnx.colorize(session, image_or_data, return_image_data)
     local src_w = image_data:getWidth()
     local src_h = image_data:getHeight()
     local input_shape = get_session_input_shape(session, input_name)
-    local input_w, input_h, channel_count = resolve_colorizer_input_size(input_shape, src_w, src_h)
-    local is_deoldify_model = channel_count == 3 -- detected DeOldify models with 3-channel input (RGB)
-    local input_buffer = resize_and_pack_colorizer_input(image_data, input_w, input_h, channel_count)
+    local resolved_model_kind = resolve_colorizer_model_kind(model_kind)
+    local input_w, input_h, channel_count = resolve_colorizer_input_size(input_shape, src_w, src_h,
+        resolved_model_kind)
+    local is_deoldify_model = resolved_model_kind == "deoldify"
+    local is_ddcolor_model = resolved_model_kind == "ddcolor"
+    local input_buffer = resize_and_pack_colorizer_input(image_data, input_w, input_h, channel_count,
+        resolved_model_kind)
     local input_value, output_value, raw_output, output_dims, output_element_count = run_single_output_session(
             session, input_name, output_name, input_buffer, input_w, input_h, channel_count)
 
@@ -1390,11 +1530,22 @@ function Onnx.colorize(session, image_or_data, return_image_data)
         local sample_y = math.min(out_h - 1, math.floor((y + 0.5) * out_h / src_h))
         for x = 0, src_w - 1 do
             local sample_x = math.min(out_w - 1, math.floor((x + 0.5) * out_w / src_w))
-            local r, g, b = read_tensor_rgb(raw_output, output_layout, output_channels, out_w, out_h,
-                    sample_x, sample_y)
-            r = math.clamp(r * output_value_scale, 0, 1)
-            g = math.clamp(g * output_value_scale, 0, 1)
-            b = math.clamp(b * output_value_scale, 0, 1)
+            local r = 0
+            local g = 0
+            local b = 0
+
+            if is_ddcolor_model then
+                local source_r, source_g, source_b = image_data:getPixel(x, y)
+                local lightness = select(1, rgb_to_lab(source_r, source_g, source_b))
+                local ab_a, ab_b = read_tensor_ab(raw_output, output_layout, out_w, out_h, sample_x, sample_y)
+                r, g, b = lab_to_rgb(lightness, ab_a, ab_b)
+            else
+                r, g, b = read_tensor_rgb(raw_output, output_layout, output_channels, out_w, out_h,
+                        sample_x, sample_y)
+                r = math.clamp(r * output_value_scale, 0, 1)
+                g = math.clamp(g * output_value_scale, 0, 1)
+                b = math.clamp(b * output_value_scale, 0, 1)
+            end
 
             if is_deoldify_model then
                 local source_r, source_g, source_b = image_data:getPixel(x, y)
@@ -1425,7 +1576,7 @@ function Onnx.colorize(session, image_or_data, return_image_data)
 end
 
 
---- Runs the super-resolution model over an image using overlapped 256x256 tiles.
+--- Runs the super-resolution model over an image using overlapped tiles.
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to upscale.
 --- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.

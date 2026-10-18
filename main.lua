@@ -39,11 +39,15 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_scale2x.onnx" -- 4 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
+local MODEL_COLORIZER_TYPE = "ddcolor" -- possible values: "colorize", "deoldify", "ddcolor"
+local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_modelscope.onnx" -- 17/19 sec, good, RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_artistic.onnx" -- 17/25 sec, very good, but very small bugs, RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_paper_tiny.onnx" -- 6/ sec, good, but small bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 20/48 sec, bad results -- results for small/medium Eiffel images
-local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 26/97 sec, average RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 26/97 sec, average RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyStable_dyn.onnx" -- 33/155 sec, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeoldifyVideo_dyn.onnx" -- 32/81 sec, RAM hungry
--- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_paper_tiny.onnx" --
+-- local MODEL_COLORIZER_PATH = "models/colorize/v6_generator.onnx" -- add appropriate comment if needed
 
 local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, average RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry
@@ -235,7 +239,8 @@ local function start_colorizing()
         return
     end
 
-    local command = string.format("colorize|%s|%s", MODEL_COLORIZER_PATH, IMAGE_BW_PATH)
+    local command = string.format("colorize|%s|%s|%s", MODEL_COLORIZER_PATH, IMAGE_BW_PATH,
+        MODEL_COLORIZER_TYPE)
     ok, err = Threading.command(4, command)
     if not ok then
         print_to_screen("Failed to queue colorizing: " .. tostring(err))
