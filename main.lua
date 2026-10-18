@@ -1,19 +1,7 @@
 -- main.lua
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal"
-local WORKING_MODE = "upscaling"
-
-lg = love.graphics
-la = love.audio
-
-io.popen("chcp 65001")
-
-require("libs.errorhandler")
-utf8 = require("utf8")
-Onnx = require("onnx")
-Threading = require("libs.threading")
-CameraMgr = require("libs.CameraMgr.lib.CameraMgr").newManager()
-require("utils")
+local WORKING_MODE = "background_removal"
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
@@ -54,7 +42,7 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 se
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 50 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite_fp16.onnx" -- 70 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_fp16.onnx" -- 75 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_quantized.onnx" -- 100 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_int8.onnx" -- 110 sec, very RAM hungry
@@ -87,12 +75,24 @@ local SCREEN_FILTER_MODES = {
 }
 local THREAD_WORKER_PATH = "thread_worker.lua"
 
-font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
+io.popen("chcp 65001") -- set console code page to UTF-8
+local SYSTEM_CODE_PAGE = 1251
+
+require("libs.errorhandler")
+utf8 = require("utf8")
+Onnx = require("onnx")
+Threading = require("libs.threading")
+CameraMgr = require("libs.CameraMgr.lib.CameraMgr").newManager()
+require("utils")
+
+lg = love.graphics
+la = love.audio
 
 local img_parrot = lg.newImage(IMAGE_PATH) -- Main input image
 local img_no_background = nil -- output image after background removal
 local img_upscaled = nil -- output image after upscaling
 local img_inpainted = nil -- output image after inpainting
+font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
 local processing_start_time = nil
 local last_elapsed_seconds = nil
 local active_drag_buttons = 0
@@ -223,12 +223,13 @@ local function final_message_and_save_image(thread_id, image_data, model_path)
 
     local output_path = model_path:gsub("^models/", "_output/"):gsub("%.onnx$", ".png")
     local absolute_output_path = love.filesystem.getSource() .. "/" .. output_path
+    absolute_output_path = codepage2codepage(absolute_output_path, 65001, SYSTEM_CODE_PAGE)
     local absolute_output_dir = absolute_output_path:match("^(.+)/[^/]+$")
     local normalized_output_dir = absolute_output_dir:gsub("/", package.config:sub(1, 1))
 
     local ok, err_or_result = pcall(function()
-        print("Saving processed image to: " .. absolute_output_path)
-        print("Creating output directory: " .. normalized_output_dir)
+        print("Saving processed image to: " .. codepage2codepage(absolute_output_path, SYSTEM_CODE_PAGE, 65001))
+        print("Creating output directory: " .. codepage2codepage(normalized_output_dir, SYSTEM_CODE_PAGE, 65001))
         local f, err = io.popen("mkdir " .. normalized_output_dir)
         love.timer.sleep(0.1)
         if f == nil then

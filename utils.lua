@@ -1,12 +1,7 @@
 -- Here be some utility functions
 
-local ffi = nil
-local CF_DIB = 8 -- clipboard format for device-independent bitmap (DIB)
-local BI_RGB = 0 -- no compression for DIB
-local GMEM_MOVEABLE = 0x0002 -- memory can be moved (required for clipboard)
-local ffi_null = nil -- null pointer
-
-ffi = require("ffi")
+local ffi = require("ffi")
+local utf8 = require("utf8")
 
 -- Windows API helpers
 ffi.cdef([[
@@ -58,8 +53,6 @@ ffi.cdef([[
         const char* lpDefaultChar, int* lpUsedDefaultChar);
 ]])
 
-ffi_null = ffi.cast("void*", 0) -- null pointer
-
 
 --  Substring function which gets a substring of `str` from character indices `start` to `stop`
 function utf8.sub(str, start, stop)
@@ -99,6 +92,24 @@ function codepage2codepage(str, from_cp, to_cp)
     local ubuf = ffi.new("char[?]", newlen + 1)
     ffi.C.WideCharToMultiByte(to_cp, 0, wbuf, wchars, ubuf, newlen + 1, nil, nil)
     return ffi.string(ubuf, newlen)
+end
+
+--- Converts a UTF-8 string to the UTF-16 buffer
+--- @param text string # UTF-8 encoded string to convert.
+--- @return userdata # UTF-16 wide-character buffer
+function utf8_to_wide(text)
+    local required_chars = ffi.C.MultiByteToWideChar(65001, 0, text, -1, nil, 0)
+    if required_chars == 0 then
+        error("Failed to convert UTF-8 path to UTF-16", 2)
+    end
+
+    local wide_chars = ffi.new("wchar_t[?]", required_chars)
+    local written_chars = ffi.C.MultiByteToWideChar(65001, 0, text, -1, wide_chars, required_chars)
+    if written_chars == 0 then
+        error("Failed to write UTF-16 string", 2)
+    end
+
+    return wide_chars
 end
 
 

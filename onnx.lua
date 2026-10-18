@@ -1,6 +1,7 @@
 
 ---@diagnostic disable: undefined-field
 
+require("utils")
 local ffi = require("ffi")
 
 ffi.cdef([[
@@ -205,9 +206,6 @@ ffi.cdef([[
     };
 
     const OrtApiBase* __stdcall OrtGetApiBase(void);
-    int __stdcall MultiByteToWideChar(unsigned int CodePage, uint32_t dwFlags,
-        const char* lpMultiByteStr, int cbMultiByte, wchar_t* lpWideCharStr,
-        int cchWideChar);
 ]])
 
 local ORT_API_VERSION = 18 -- compatible with ONNX Runtime 1.14+
@@ -215,7 +213,6 @@ local ORT_LOGGING_LEVEL_WARNING = 2
 local ORT_ARENA_ALLOCATOR = 1
 local ORT_MEM_TYPE_DEFAULT = 0
 local ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT = 1
-local CP_UTF8 = 65001
 local NULL = ffi.cast("void*", 0)
 
 local Onnx = {
@@ -234,20 +231,12 @@ local State = {
 }
 
 
---- Checks whether an ONNX Runtime status handle is present and valid.
---- @param status any # Value returned by an ONNX Runtime API call.
---- @return boolean # True when the status is not nil and not NULL.
-local function has_status(status)
-    return status ~= nil and status ~= NULL
-end
-
-
 --- Raises an error if an ONNX Runtime call returned a failure status.
 --- @param status any # Value returned by an ONNX Runtime API call.
 --- @param action string # Human-readable description of the call that failed.
 --- @return nil # Returns nothing when the status indicates success.
 local function check(status, action)
-    if not has_status(status) then
+    if status == nil or status == NULL then
         return
     end
 
@@ -255,25 +244,6 @@ local function check(status, action)
     local err_ptr = State.api.GetErrorMessage(status)
     local err_msg = err_ptr ~= nil and ffi.string(err_ptr) or "Unknown ONNX Runtime error"
     error(string.format("ONNX Runtime %s failed (code %d): %s", action, err_code, err_msg), 2)
-end
-
-
---- Converts a UTF-8 string to the UTF-16 buffer required by ONNX Runtime API calls.
---- @param text string # UTF-8 encoded string to convert.
---- @return userdata # UTF-16 wide-character buffer compatible with ONNX Runtime.
-local function utf8_to_wide(text)
-    local required_chars = ffi.C.MultiByteToWideChar(CP_UTF8, 0, text, -1, nil, 0)
-    if required_chars == 0 then
-        error("Failed to convert UTF-8 path to UTF-16 for ONNX Runtime", 2)
-    end
-
-    local wide = ffi.new("wchar_t[?]", required_chars)
-    local written_chars = ffi.C.MultiByteToWideChar(CP_UTF8, 0, text, -1, wide, required_chars)
-    if written_chars == 0 then
-        error("Failed to write UTF-16 path for ONNX Runtime", 2)
-    end
-
-    return wide
 end
 
 
@@ -399,64 +369,33 @@ local function to_c_string(value)
 end
 
 
---- Returns the cached default allocator or creates it on first use.
---- @return userdata # Default ONNX Runtime allocator handle.
-local function get_default_allocator()
-    if State.default_allocator ~= nil and State.default_allocator[0] ~= nil and State.default_allocator[0] ~= NULL then
-        return State.default_allocator[0]
-    end
-
-    local allocator_out = ffi.new("OrtAllocator*[1]")
-    check(State.api.GetAllocatorWithDefaultOptions(allocator_out), "GetAllocatorWithDefaultOptions")
-    State.default_allocator = allocator_out
-    return allocator_out[0]
-end
-
-
 --- Reads the input or output tensor name for a specific session index.
 --- @param session_ptr userdata|table # ONNX Runtime session handle.
 --- @param index integer # Tensor index within the session.
 --- @param is_input boolean # True to query an input name, false for an output name.
 --- @return string # Tensor name.
 local function get_session_name(session_ptr, index, is_input)
-    local allocator = get_default_allocator()
+    local allocator = nil
+    if State.default_allocator ~= nil and State.default_allocator[0] ~= nil and
+            State.default_allocator[0] ~= NULL then
+        allocator = State.default_allocator[0]
+    else
+        local allocator_out = ffi.new("OrtAllocator*[1]")
+        check(State.api.GetAllocatorWithDefaultOptions(allocator_out), "GetAllocatorWithDefaultOptions")
+        State.default_allocator = allocator_out
+        allocator = allocator_out[0]
+    end
     local name_out = ffi.new("char*[1]")
 
     if is_input then
         check(State.api.SessionGetInputName(session_ptr, index, allocator, name_out), "SessionGetInputName")
-    else
+    else -- output names
         check(State.api.SessionGetOutputName(session_ptr, index, allocator, name_out), "SessionGetOutputName")
     end
 
     local name = ffi.string(name_out[0])
     check(State.api.AllocatorFree(allocator, name_out[0]), "AllocatorFree")
     return name
-end
-
-
---- Collects the input and output tensor names from a session.
---- @param session_ptr userdata # ONNX Runtime session handle.
---- @return table # Input tensor names.
---- @return table # Output tensor names.
-local function get_session_tensor_names(session_ptr)
-    local input_count = ffi.new("size_t[1]")
-    local output_count = ffi.new("size_t[1]")
-    check(State.api.SessionGetInputCount(session_ptr, input_count), "SessionGetInputCount")
-    check(State.api.SessionGetOutputCount(session_ptr, output_count), "SessionGetOutputCount")
-
-    local input_names = {}
-    for i = 0, tonumber(input_count[0]) - 1 do
-        input_names[#input_names + 1] = get_session_name(session_ptr, i, true)
-    end
-
-    local output_names = {}
-    for i = 0, tonumber(output_count[0]) - 1 do
-        output_names[#output_names + 1] = get_session_name(session_ptr, i, false)
-    end
-
-    print("Input tensor names: " .. table.concat(input_names, ", "))
-    print("Output tensor names: " .. table.concat(output_names, ", "))
-    return input_names, output_names
 end
 
 
@@ -705,7 +644,23 @@ local function ensure_session_tensor_names(session)
     local output_names = session.output_names
 
     if type(input_names) ~= "table" or type(output_names) ~= "table" then
-        input_names, output_names = get_session_tensor_names(session.session)
+        local input_count = ffi.new("size_t[1]")
+        local output_count = ffi.new("size_t[1]")
+        check(State.api.SessionGetInputCount(session.session, input_count), "SessionGetInputCount")
+        check(State.api.SessionGetOutputCount(session.session, output_count), "SessionGetOutputCount")
+
+        input_names = {}
+        for i = 0, tonumber(input_count[0]) - 1 do
+            input_names[#input_names + 1] = get_session_name(session.session, i, true)
+        end
+
+        output_names = {}
+        for i = 0, tonumber(output_count[0]) - 1 do
+            output_names[#output_names + 1] = get_session_name(session.session, i, false)
+        end
+
+        print("Input tensor names: " .. table.concat(input_names, ", "))
+        print("Output tensor names: " .. table.concat(output_names, ", "))
         session.input_names = input_names
         session.output_names = output_names
     end
@@ -1054,20 +1009,6 @@ local function detect_output_value_scale(tensor_data, element_count)
 end
 
 
---- Clamps a floating-point channel to Love2D color range.
---- @param value number # Channel value.
---- @return number # Clamped channel value.
-local function clamp01(value)
-    if value < 0 then
-        return 0
-    end
-    if value > 1 then
-        return 1
-    end
-    return value
-end
-
-
 --- Reads the shape of a specific input tensor for the current ONNX session.
 --- @param session_or_ptr userdata|table # ONNX session handle or session metadata table.
 --- @param input_name string # Input tensor name to inspect.
@@ -1294,9 +1235,9 @@ function Onnx.inpaint(session, image_or_data, alpha_threshold, return_image_data
                 local fill_r, fill_g, fill_b = read_tensor_rgb(raw_output, output_layout, output_channels,
                     out_w, out_h, sample_x, sample_y)
                 output_image_data:setPixel(x, y,
-                    clamp01(fill_r * output_value_scale),
-                    clamp01(fill_g * output_value_scale),
-                    clamp01(fill_b * output_value_scale),
+                    math.clamp(fill_r * output_value_scale, 0, 1),
+                    math.clamp(fill_g * output_value_scale, 0, 1),
+                    math.clamp(fill_b * output_value_scale, 0, 1),
                     1)
             else
                 output_image_data:setPixel(x, y, source_r, source_g, source_b, 1)
@@ -1430,9 +1371,9 @@ function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile
                     local r, g, b = read_tensor_rgb(raw_output, output_layout, output_channels,
                         tile_out_w, tile_out_h, crop_out_x + out_x, crop_out_y + out_y)
                     output_image_data:setPixel(dst_x + out_x, dst_y + out_y,
-                        clamp01(r * output_value_scale),
-                        clamp01(g * output_value_scale),
-                        clamp01(b * output_value_scale),
+                        math.clamp(r * output_value_scale, 0, 1),
+                        math.clamp(g * output_value_scale, 0, 1),
+                        math.clamp(b * output_value_scale, 0, 1),
                         1)
                 end
             end
