@@ -1,10 +1,11 @@
 -- main.lua
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
-local WORKING_MODE = "upscaling"
+local WORKING_MODE = "colorizing"
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
+local IMAGE_BW_PATH = "assets/parrot_bw.png" -- Input image in black and white
 
 ---- Models. Uncomment the one you want to use for upscaling.
 local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED
@@ -35,7 +36,9 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_scale2x.onnx" -- 4 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
-local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- TODO
+local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 17 sec,
+-- local MODEL_COLORIZER_PATH = "models/colorize/colorizer.onnx" -- 13 sec
+-- local MODEL_COLORIZER_PATH = "models/colorize/ColorizeStable_dyn.onnx" -- 40 sec
 
 local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, average RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry
@@ -90,9 +93,11 @@ la = love.audio
 
 local img_parrot = lg.newImage(IMAGE_PATH) -- Main input image
 local img_parrot_with_holes = lg.newImage(IMAGE_WITH_HOLES_PATH)
+local img_parrot_bw = lg.newImage(IMAGE_BW_PATH)
 local img_no_background = nil -- output image after background removal
 local img_upscaled = nil -- output image after upscaling
 local img_inpainted = nil -- output image after inpainting
+local img_colorized = nil -- output image after colorizing
 font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
 local processing_start_time = nil
 local last_elapsed_seconds = nil
@@ -115,9 +120,11 @@ local function apply_screen_filter_mode()
     local mode = SCREEN_FILTER_MODES[current_screen_filter_mode]
     lg.setDefaultFilter(mode.min, mode.mag)
     apply_screen_filter_to_image(img_parrot)
+    apply_screen_filter_to_image(img_parrot_bw)
     apply_screen_filter_to_image(img_upscaled)
     apply_screen_filter_to_image(img_no_background)
     apply_screen_filter_to_image(img_inpainted)
+    apply_screen_filter_to_image(img_colorized)
     print("Screen smoothing: " .. mode.label)
 end
 
@@ -211,6 +218,31 @@ local function start_inpaint()
 end
 
 
+local function start_colorizing()
+    if Threading.is_running(4) then
+        print_to_screen("Colorizing is already running")
+        return
+    end
+
+    local ok, err = Threading.run(THREAD_WORKER_PATH, 4, {"colorize"})
+    if not ok then
+        print_to_screen("Failed to start the worker thread: " .. tostring(err))
+        return
+    end
+
+    local command = string.format("colorize|%s|%s", MODEL_COLORIZER_PATH, IMAGE_BW_PATH)
+    ok, err = Threading.command(4, command)
+    if not ok then
+        print_to_screen("Failed to queue colorizing: " .. tostring(err))
+        return
+    end
+
+    processing_start_time = love.timer.getTime()
+    last_elapsed_seconds = nil
+    print_to_screen("Started colorizing in a worker thread...")
+end
+
+
 local function final_message_and_save_image(thread_id, image_data, model_path)
     print_to_screen(string.format("ONNX processing time: %.3f seconds",
         love.timer.getTime() - processing_start_time))
@@ -288,7 +320,7 @@ function love.update(dt)
     CameraMgr.update(dt)
 
     if processing_start_time then
-        for i = 1, 3 do
+        for i = 1, 4 do
             if Threading.has_crashed(i) then
                 print_to_screen("Worker thread " .. tostring(i) .. " has crashed")
                 processing_start_time = nil
@@ -352,6 +384,22 @@ function love.update(dt)
                 print_to_screen("Image inpainting failed: " .. error_text)
                 final_message_and_save_image(3)
             end
+
+            -- Check messages from worker 4 - colorizing
+            local last_message_4 = Threading.consume_last_message(4)
+            if last_message_4 and last_message_4:match("^colorize_done:") then
+                local decoded_FileData = love.filesystem.newFileData(love.data.decode("data", "base64",
+                        last_message_4:sub(#"colorize_done:" + 1)), "_")
+                local output_image_data = love.image.newImageData(decoded_FileData)
+                img_colorized = lg.newImage(output_image_data)
+                apply_screen_filter_to_image(img_colorized)
+                print_to_screen("Image colorized successfully")
+                final_message_and_save_image(4, output_image_data, MODEL_COLORIZER_PATH)
+            elseif last_message_4 and last_message_4:match("^colorize_error:") then
+                local error_text = last_message_4:sub(#"colorize_error:" + 1)
+                print_to_screen("Image colorizing failed: " .. error_text)
+                final_message_and_save_image(4)
+            end
         end
     end
 end
@@ -382,8 +430,13 @@ function love.draw()
     lg.setColor(1, 1, 1, 1)
     lg.setFont(font_mplusrounded14)
 
+    local source_image = img_parrot
+    if WORKING_MODE == "colorizing" then
+        source_image = img_parrot_bw
+    end
+
     CameraMgr.attach()
-        lg.draw(img_parrot, 200, 10)
+        lg.draw(source_image, 200, 10)
         if WORKING_MODE == "inpainting" then
             lg.draw(img_parrot_with_holes, 200 + img_parrot:getWidth(), 10)
         end
@@ -395,6 +448,9 @@ function love.draw()
         end
         if img_inpainted then
             lg.draw(img_inpainted, 200 + img_parrot:getWidth() + img_parrot_with_holes:getWidth(), 10)
+        end
+        if img_colorized then
+            lg.draw(img_colorized, 200 + source_image:getWidth(), 10)
         end
     CameraMgr.detach()
 

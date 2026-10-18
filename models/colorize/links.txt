@@ -1,2 +1,4 @@
-colorizer.onnx, denoiser.onnx: https://huggingface.co/Tinigon/manga-colorizer-onnx/tree/main gives black without denoiser
 manga-colorize-fp16.onnx: https://huggingface.co/Faridzar/manga-colorization-v2-onnx
+colorizer.onnx, denoiser.onnx: https://huggingface.co/Tinigon/manga-colorizer-onnx/tree/main
+ColorizeArtistic_dyn.onnx, ColorizeStable_dyn.onnx, DeoldifyVideo_dyn.onnx: https://github.com/instant-high/deoldify-onnx > https://drive.google.com/drive/folders/1bU9Zj7zGVEujIzvDTb1b9cyWU3s__WQR
+

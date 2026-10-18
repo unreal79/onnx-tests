@@ -199,11 +199,68 @@ local function worker3_onnx_inpaint(step, command)
 end
 
 
+-- Worker thread function 4: Colorize grayscale images
+--- @param step number # current iteration number
+--- @param command string # last received command
+local function worker4_onnx_colorize(step, command)
+    if command and command:match("^colorize") then
+        local commands = {}
+        for part in string.gmatch(command, "([^|]+)") do
+            commands[#commands + 1] = part
+        end
+
+        local task_name = commands[1]
+        if task_name ~= "colorize" then -- hardcoded
+            send_status("unsupported command: " .. tostring(command))
+            last_command = ""
+            return
+        end
+
+        local model_path = commands[2]
+        local image_path = commands[3]
+
+        send_status("colorize_start") -- hardcoded
+
+        local ok, filedata = xpcall(function()
+            local Onnx = require("onnx")
+            local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
+            if not onnx_api then
+                error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
+            end
+
+            local session = Onnx.create_session(model_path)
+            if not session or not session.session then
+                error((session and tostring(session.message)) or "Failed to create ONNX session")
+            end
+            print(session.message)
+
+            local image_data = love.image.newImageData(image_path)
+            local output_image_data = Onnx.colorize(session, image_data, true)
+            return output_image_data:encode("tga", nil)
+        end, debug.traceback)
+
+        if ok then
+            local base64_encoded_FileData = love.data.encode("string", "base64", filedata)
+            send_status("colorize_done:" .. base64_encoded_FileData) -- hardcoded message
+        else
+            send_status("colorize_error:" .. tostring(filedata)) -- hardcoded message
+        end
+
+        last_command = ""
+        is_running = false
+        return
+    end
+
+    love.timer.sleep(0.1)
+end
+
+
 -- list of worker functions mapped by worker_id
 local Functions = {
     [1] = worker1_onnx_remove_background,
     [2] = worker2_onnx_upscale,
     [3] = worker3_onnx_inpaint,
+    [4] = worker4_onnx_colorize,
 }
 
 if Functions[worker_id] == nil then

@@ -691,6 +691,42 @@ local function resolve_runtime_input_size(input_shape, fallback_w, fallback_h)
 end
 
 
+--- Rounds a dimension up to the nearest multiple.
+--- @param value integer # Source dimension.
+--- @param multiple integer # Target multiple.
+--- @return integer # Rounded dimension.
+local function round_up_to_multiple(value, multiple)
+    if multiple <= 1 then
+        return math.max(1, value)
+    end
+
+    return math.max(multiple, math.floor((value + multiple - 1) / multiple) * multiple)
+end
+
+
+--- Resolves the runtime input size for the manga colorizer model.
+--- The model expects `[1,5,H,W]` with height and width divisible by 32.
+--- @param input_shape table|nil # ONNX input shape list.
+--- @param fallback_w integer # Source image width.
+--- @param fallback_h integer # Source image height.
+--- @return number # Runtime width.
+--- @return number # Runtime height.
+--- @return number # Runtime channel count.
+local function resolve_colorizer_input_size(input_shape, fallback_w, fallback_h)
+    local target_w, target_h, channel_count = infer_model_input_size(input_shape)
+
+    if type(input_shape) == "table" and #input_shape >= 4 then
+        local width_dim = tonumber(input_shape[#input_shape]) or 0
+        local height_dim = tonumber(input_shape[#input_shape - 1]) or 0
+        if width_dim > 0 and height_dim > 0 then
+            return target_w, target_h, channel_count
+        end
+    end
+
+    return round_up_to_multiple(fallback_w, 32), round_up_to_multiple(fallback_h, 32), channel_count
+end
+
+
 --- Runs a single-input single-output ONNX model and returns the output tensor.
 --- @param session table # ONNX session metadata created by `Onnx.create_session`.
 --- @param input_name string # Input tensor name.
@@ -798,6 +834,36 @@ local function run_inpaint_session(session, image_input_name, mask_input_name, o
     local output_dims, output_element_count = get_value_shape(output_tensors_ptr[0])
     return image_input_value[0], mask_input_value[0], output_tensors_ptr[0], ffi.cast("float*", raw_output[0]),
             output_dims, output_element_count
+end
+
+
+--- Packs a grayscale image for the manga colorizer input tensor.
+--- ch0 = grayscale 0..1, ch1-3 = hint RGB, ch4 = hint mask; hints stay zeroed.
+--- @param image_data any # Love2D ImageData object.
+--- @param target_w integer # Runtime input width.
+--- @param target_h integer # Runtime input height.
+--- @param channel_count integer # Number of channels expected by the model.
+--- @return any # Float buffer in NCHW layout.
+local function resize_and_pack_colorizer_input(image_data, target_w, target_h, channel_count)
+    local src_w = image_data:getWidth()
+    local src_h = image_data:getHeight()
+    local float_buffer_size = target_w * target_h * channel_count
+    local float_buffer = ffi.new("float[?]", float_buffer_size)
+    local max_x = src_w - 1
+    local max_y = src_h - 1
+
+    for y = 0, target_h - 1 do
+        local src_y = math.min(max_y, math.floor((y + 0.5) * src_h / target_h))
+        for x = 0, target_w - 1 do
+            local src_x = math.min(max_x, math.floor((x + 0.5) * src_w / target_w))
+            local r, g, b = image_data:getPixel(src_x, src_y)
+            local pixel_index = y * target_w + x
+            float_buffer[pixel_index] = math.clamp((r * 0.299) + (g * 0.587) + (b * 0.114), 0, 1)
+        end
+    end
+
+    print("Colorizer float buffer size: " .. tostring(float_buffer_size) .. " floats")
+    return float_buffer
 end
 
 
@@ -1247,6 +1313,72 @@ function Onnx.inpaint(session, image_or_data, alpha_threshold, return_image_data
 
     release_ort_value(image_input_value)
     release_ort_value(mask_input_value)
+    release_ort_value(output_value)
+
+    if return_image_data then
+        return output_image_data
+    end
+
+    return love.graphics.newImage(output_image_data)
+end
+
+
+--- Runs the manga colorizer model on a grayscale image.
+--- @param session table # ONNX session metadata created by `Onnx.create_session`.
+--- @param image_or_data love.Image|love.ImageData # Love2D Image or ImageData to colorize.
+--- @param return_image_data boolean|nil # When true, return an ImageData instead of a main-thread Image.
+--- @return love.Image|love.ImageData # Colorized image.
+function Onnx.colorize(session, image_or_data, return_image_data)
+    return_image_data = return_image_data == true
+    if type(session) ~= "table" or type(session.session) == "nil" then
+        error("ONNX Runtime session is invalid", 2)
+    end
+
+    if type(image_or_data) ~= "userdata" then
+        error("Expected a Love2D ImageData or Image object for image colorization", 2)
+    end
+
+    local image_data = image_or_data
+    if image_or_data.typeOf ~= nil and image_or_data:typeOf("Image") then
+        image_data = image_or_data:getData()
+    end
+
+    local input_names, output_names = ensure_session_tensor_names(session)
+    local input_name = input_names[1]
+    local output_name = output_names[1]
+    if input_name == nil or output_name == nil then
+        error("ONNX Runtime session does not expose input/output tensor names", 2)
+    end
+
+    local src_w = image_data:getWidth()
+    local src_h = image_data:getHeight()
+    local input_shape = get_session_input_shape(session, input_name)
+    local input_w, input_h, channel_count = resolve_colorizer_input_size(input_shape, src_w, src_h)
+    local input_buffer = resize_and_pack_colorizer_input(image_data, input_w, input_h, channel_count)
+    local input_value, output_value, raw_output, output_dims, output_element_count = run_single_output_session(
+            session, input_name, output_name, input_buffer, input_w, input_h, channel_count)
+
+    local out_w, out_h, output_channels, output_layout = resolve_image_tensor_layout(output_dims,
+            output_element_count)
+    local output_image_data = love.image.newImageData(src_w, src_h)
+
+    print(string.format("Colorize output size: %dx%d", out_w, out_h))
+
+    for y = 0, src_h - 1 do
+        local sample_y = math.min(out_h - 1, math.floor((y + 0.5) * out_h / src_h))
+        for x = 0, src_w - 1 do
+            local sample_x = math.min(out_w - 1, math.floor((x + 0.5) * out_w / src_w))
+            local r, g, b = read_tensor_rgb(raw_output, output_layout, output_channels, out_w, out_h,
+                    sample_x, sample_y)
+            output_image_data:setPixel(x, y,
+                math.clamp(r, 0, 1),
+                math.clamp(g, 0, 1),
+                math.clamp(b, 0, 1),
+                1)
+        end
+    end
+
+    release_ort_value(input_value)
     release_ort_value(output_value)
 
     if return_image_data then
