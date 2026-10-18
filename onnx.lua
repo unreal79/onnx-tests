@@ -467,8 +467,9 @@ end
 --- @return number # Channel count.
 local function infer_model_input_size(input_shape)
     if type(input_shape) ~= "table" or #input_shape == 0 then
-        print("Invalid input shape, using default size 512x512x3")
-        return 512, 512, 3 --320, 320, 3
+        local default_w_h = 512
+        print("Invalid input shape, using default size " .. default_w_h .. "x" .. default_w_h .. "x3")
+        return default_w_h, default_w_h, 3
     end
 
     local shape = {}
@@ -508,8 +509,9 @@ local function infer_model_input_size(input_shape)
     end
 
     if type(target_w) ~= "number" or type(target_h) ~= "number" or target_w <= 0 or target_h <= 0 then
-        print("Invalid target width or height, using default size 512x512")
-        return 512, 512, channel_count -- 320, 320, channel_count
+        local default_w_h = 512
+        print("Invalid target width or height, using default size " .. default_w_h .. "x" .. default_w_h)
+        return default_w_h, default_w_h, channel_count
     end
 
     print(string.format("Detected target size: %dx%d with %d channels", target_w, target_h, channel_count))
@@ -1160,10 +1162,6 @@ function Onnx.remove_background(session, image_or_data, alpha_threshold, return_
 
     local shape = get_session_input_shape(session, input_name)
     local target_w, target_h, channel_count = infer_model_input_size(shape)
-    if target_w <= 0 or target_h <= 0 then
-        print("Invalid target width or height, using default size 320x320")
-        target_w, target_h, channel_count = 320, 320, 3
-    end
 
     local src_w = image_data:getWidth()
     local src_h = image_data:getHeight()
@@ -1272,9 +1270,6 @@ function Onnx.inpaint(session, image_or_data, alpha_threshold, return_image_data
     local src_h = image_data:getHeight()
     local shape = get_session_input_shape(session, image_input_name)
     local input_w, input_h, channel_count = infer_model_input_size(shape)
-    if input_w <= 0 or input_h <= 0 then
-        input_w, input_h, channel_count = 512, 512, 3
-    end
 
     local image_input_buffer = resize_and_pack_rgb(image_data, input_w, input_h, 3)
     local mask_input_buffer = resize_and_pack_alpha_mask(image_data, input_w, input_h, alpha_threshold)
