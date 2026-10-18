@@ -405,10 +405,17 @@ end
 --- @return number # Height in pixels.
 --- @return number # Channel count.
 local function infer_model_input_size(input_shape)
+    local channel_count = 3
+    if input_shape and #input_shape >= 3 then
+        channel_count = tonumber(input_shape[2]) or 3
+    else
+        channel_count = 3
+    end
     if type(input_shape) ~= "table" or #input_shape == 0 then
         local default_w_h = 512
-        print("Invalid input shape, using default size " .. default_w_h .. "x" .. default_w_h .. "x3")
-        return default_w_h, default_w_h, 3
+        print("Invalid input shape, using default size " .. default_w_h .. "x" .. default_w_h ..
+            "x" .. channel_count)
+        return default_w_h, default_w_h, channel_count
     end
 
     local shape = {}
@@ -418,7 +425,6 @@ local function infer_model_input_size(input_shape)
 
     local target_w = nil
     local target_h = nil
-    local channel_count = 3
 
     if #shape >= 4 then
         if shape[1] == 1 and shape[2] > 0 then
@@ -449,7 +455,8 @@ local function infer_model_input_size(input_shape)
 
     if type(target_w) ~= "number" or type(target_h) ~= "number" or target_w <= 0 or target_h <= 0 then
         local default_w_h = 512
-        print("Invalid target width or height, using default size " .. default_w_h .. "x" .. default_w_h)
+        print("Invalid target width or height, using default size " .. default_w_h .. "x" ..
+            default_w_h .. " with " .. channel_count .. " channels")
         return default_w_h, default_w_h, channel_count
     end
 

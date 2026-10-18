@@ -51,7 +51,10 @@ There are more than 40 example images located in the `_output` folder.
 
 ## Input image attribution
 
-The input image used in this project (`assets/parrot.png`) is for demonstration purposes only. It's taken from here: [Parrot Image designed by kuritafsheen77 - Magnific.com](https://www.magnific.com/free-photo/closeup-scarlet-macaw-from-side-view-scarlet-macaw-closeup-head_27271706.htm). License type: Free for commercial use WITH ATTRIBUTION license.
+The input images used in this project (`assets/parrot.png`, `assets/eiffel_bw.png`) are for demonstration purposes only.
+
+- Parrot image taken from here: [Parrot Image designed by kuritafsheen77 - Magnific.com](https://www.magnific.com/free-photo/closeup-scarlet-macaw-from-side-view-scarlet-macaw-closeup-head_27271706.htm). License type: Free for commercial use WITH ATTRIBUTION license.
+- Eiffel Tower image taken from here: [Eiffel Tower Image by Lisa (lisadelarte)](https://unsplash.com/photos/eiffel-tower-at-paris-france-MGDIKg9Bw5U). License type: Free to use under the Unsplash License.
 
 ## License
 
