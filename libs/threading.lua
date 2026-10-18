@@ -134,8 +134,9 @@ end
 --- Starts one of the background worker functions in its own thread
 --- @param worker_file string # path to the worker Lua file
 --- @param worker_id number # worker identifier
+--- @param allowed_commands table # list of allowed commands for the worker
 --- @return boolean, string|nil # true if the thread was started successfully, false and an error message otherwise
-function Threading.run(worker_file, worker_id)
+function Threading.run(worker_file, worker_id, allowed_commands)
     if not love.thread or love.system.getOS() == "Web" then
         return false, "Threads are not available on this platform"
     end
@@ -160,6 +161,7 @@ function Threading.run(worker_file, worker_id)
     state.started_at = love.timer.getTime()
     state.last_status_at = state.started_at
 
+    state.allowed_commands = allowed_commands
     state.thread:start(worker_id)
 
     return true, nil
@@ -208,14 +210,17 @@ function Threading.update()
     for worker_id, state in pairs(Workers) do
         local message = state.status_channel:pop()
         while message ~= nil do
-            local now = love.timer.getTime()
-                local should_keep_previous_message = message == "stopped" and state.last_message and
-                    (state.last_message:match("^remove_background_") or
-                    state.last_message:match("^upscale_") or
-                    state.last_message:match("^inpaint_"))
-            if not should_keep_previous_message then
+            local allowed_cmd = false
+            for _, cmd in ipairs(state.allowed_commands) do
+                if state.last_message and state.last_message:match("^" .. cmd .. "_") then
+                    allowed_cmd = true
+                    break
+                end
+            end
+            if not (message == "stopped" and allowed_cmd) then
                 state.last_message = message
             end
+            local now = love.timer.getTime()
             state.last_status_at = now
 
             if message == "paused" then

@@ -1,7 +1,7 @@
 -- main.lua
 
----- Main working mode. Options: "upscaling", "inpainting", "background_removal"
-local WORKING_MODE = "inpainting"
+---- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
+local WORKING_MODE = "upscaling"
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
@@ -140,7 +140,7 @@ local function start_background_removal()
         return
     end
 
-    local ok, err = Threading.run(THREAD_WORKER_PATH, 1)
+    local ok, err = Threading.run(THREAD_WORKER_PATH, 1, {"remove_background"})
     if not ok then
         print_to_screen("Failed to start the worker thread: " .. tostring(err))
         return
@@ -165,7 +165,7 @@ local function start_upscale()
         return
     end
 
-    local ok, err = Threading.run(THREAD_WORKER_PATH, 2)
+    local ok, err = Threading.run(THREAD_WORKER_PATH, 2, {"upscale"})
     if not ok then
         print_to_screen("Failed to start the worker thread: " .. tostring(err))
         return
@@ -191,7 +191,7 @@ local function start_inpaint()
         return
     end
 
-    local ok, err = Threading.run(THREAD_WORKER_PATH, 3)
+    local ok, err = Threading.run(THREAD_WORKER_PATH, 3, {"inpaint"})
     if not ok then
         print_to_screen("Failed to start the worker thread: " .. tostring(err))
         return
@@ -273,9 +273,12 @@ function love.load()
         start_upscale()
     elseif WORKING_MODE == "inpainting" then
         start_inpaint()
+    elseif WORKING_MODE == "colorizing" then
+        start_colorizing()
     else
         error("Unknown working mode: " .. tostring(WORKING_MODE) ..
-            ". WORKING_MODE is expected to be 'background_removal', 'upscaling', or 'inpainting'")
+            ". WORKING_MODE is expected to be 'background_removal', 'upscaling', " ..
+            "'inpainting', or 'colorizing'")
     end
 end
 
