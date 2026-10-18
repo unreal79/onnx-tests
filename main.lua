@@ -6,7 +6,7 @@ local WORKING_MODE = "colorizing"
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
 -- local IMAGE_BW_PATH = "assets/parrot_bw.png" -- Input image in black and white
--- eiffel_bw.png image size is 982x1228, eiffel_bw_small.png is 576x720
+---- eiffel_bw.png image size is 982x1228, eiffel_bw_small.png is 576x720
 -- local IMAGE_BW_PATH = "assets/eiffel_bw.png" -- Input image in black and white
 local IMAGE_BW_PATH = "assets/eiffel_bw_small.png" -- Input image in black and white, smaller version
 
@@ -39,9 +39,11 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_scale2x.onnx" -- 4 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
--- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 18/40 sec,
--- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorizer-colorizer.onnx" -- /35 sec
-local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 27/40 sec, average RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 20/48 sec, bad results -- results for small/medium Eiffel images
+local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 26/97 sec, average RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyStable_dyn.onnx" -- 33/155 sec, RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/DeoldifyVideo_dyn.onnx" -- 32/81 sec, RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_paper_tiny.onnx" --
 
 local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, average RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry

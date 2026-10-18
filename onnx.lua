@@ -711,8 +711,9 @@ local function round_up_to_multiple(value, multiple)
 end
 
 
---- Resolves the runtime input size for the manga colorizer model.
---- The model expects `[1,5,H,W]` with height and width divisible by 32.
+--- Resolves the runtime input size for the current colorizer model.
+--- The manga colorizer expects `[1,5,H,W]` with height and width divisible by 32.
+--- DeOldify ONNX models also require runtime dimensions divisible by 32.
 --- @param input_shape table|nil # ONNX input shape list.
 --- @param fallback_w integer # Source image width.
 --- @param fallback_h integer # Source image height.
@@ -844,8 +845,9 @@ local function run_inpaint_session(session, image_input_name, mask_input_name, o
 end
 
 
---- Packs a grayscale image for the manga colorizer input tensor.
---- ch0 = grayscale 0..1, ch1-3 = hint RGB, ch4 = hint mask; hints stay zeroed.
+--- Packs a grayscale image for the current colorizer input tensor.
+--- For the manga colorizer, ch0 = grayscale 0..1 and hint channels stay zeroed.
+--- For DeOldify, grayscale is replicated into 3 RGB planes in the 0..255 range.
 --- @param image_data any # Love2D ImageData object.
 --- @param target_w integer # Runtime input width.
 --- @param target_h integer # Runtime input height.
@@ -865,7 +867,17 @@ local function resize_and_pack_colorizer_input(image_data, target_w, target_h, c
             local src_x = math.min(max_x, math.floor((x + 0.5) * src_w / target_w))
             local r, g, b = image_data:getPixel(src_x, src_y)
             local pixel_index = y * target_w + x
-            float_buffer[pixel_index] = math.clamp((r * 0.299) + (g * 0.587) + (b * 0.114), 0, 1)
+            local grayscale = math.clamp((r * 0.299) + (g * 0.587) + (b * 0.114), 0, 1)
+
+            if channel_count == 3 then
+                local grayscale_255 = grayscale * 255.0
+                local plane_size = target_w * target_h
+                float_buffer[pixel_index] = grayscale_255
+                float_buffer[plane_size + pixel_index] = grayscale_255
+                float_buffer[(plane_size * 2) + pixel_index] = grayscale_255
+            else
+                float_buffer[pixel_index] = grayscale
+            end
         end
     end
 
@@ -1361,12 +1373,15 @@ function Onnx.colorize(session, image_or_data, return_image_data)
     local src_h = image_data:getHeight()
     local input_shape = get_session_input_shape(session, input_name)
     local input_w, input_h, channel_count = resolve_colorizer_input_size(input_shape, src_w, src_h)
+    local is_deoldify_model = channel_count == 3 -- detected DeOldify models with 3-channel input (RGB)
     local input_buffer = resize_and_pack_colorizer_input(image_data, input_w, input_h, channel_count)
     local input_value, output_value, raw_output, output_dims, output_element_count = run_single_output_session(
             session, input_name, output_name, input_buffer, input_w, input_h, channel_count)
 
     local out_w, out_h, output_channels, output_layout = resolve_image_tensor_layout(output_dims,
             output_element_count)
+    local output_value_scale = is_deoldify_model and detect_output_value_scale(raw_output,
+            output_element_count) or 1.0
     local output_image_data = love.image.newImageData(src_w, src_h)
 
     print(string.format("Colorize output size: %dx%d", out_w, out_h))
@@ -1377,11 +1392,25 @@ function Onnx.colorize(session, image_or_data, return_image_data)
             local sample_x = math.min(out_w - 1, math.floor((x + 0.5) * out_w / src_w))
             local r, g, b = read_tensor_rgb(raw_output, output_layout, output_channels, out_w, out_h,
                     sample_x, sample_y)
-            output_image_data:setPixel(x, y,
-                math.clamp(r, 0, 1),
-                math.clamp(g, 0, 1),
-                math.clamp(b, 0, 1),
-                1)
+            r = math.clamp(r * output_value_scale, 0, 1)
+            g = math.clamp(g * output_value_scale, 0, 1)
+            b = math.clamp(b * output_value_scale, 0, 1)
+
+            if is_deoldify_model then
+                local source_r, source_g, source_b = image_data:getPixel(x, y)
+                local source_luma = math.clamp((source_r * 0.299) + (source_g * 0.587) + (source_b * 0.114), 0, 1)
+                local color_luma = (r * 0.299) + (g * 0.587) + (b * 0.114)
+                if color_luma > 0.0001 then
+                    local luma_scale = source_luma / color_luma
+                    r = math.clamp(r * luma_scale, 0, 1)
+                    g = math.clamp(g * luma_scale, 0, 1)
+                    b = math.clamp(b * luma_scale, 0, 1)
+                else
+                    r, g, b = source_luma, source_luma, source_luma
+                end
+            end
+
+            output_image_data:setPixel(x, y, r, g, b, 1)
         end
     end
 
