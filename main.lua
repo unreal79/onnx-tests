@@ -51,6 +51,13 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 15 se
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 50 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_fp16.onnx" -- 75 sec, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_quantized.onnx" -- 100 sec, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_int8.onnx" -- 110 sec, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg_q4f16.onnx" -- 130 sec, very RAM hungry, requires setting width to 1024
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg-1-4.onnx" -- 5 sec, very bad result
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg-1-4_quantized.onnx" -- 5 sec, very bad result
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg.onnx" -- 5 sec, very bad result
 
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_.onnx" -- 25 sec

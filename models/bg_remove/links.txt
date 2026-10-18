@@ -11,3 +11,7 @@ isnet-general-use.onnx: https://huggingface.co/SacredNoir/isnet-general-use-onnx
 isnet-general-use-fp16.onnx: https://huggingface.co/tiper-penta/isnet-general-use-fp16/tree/main
 isnet-general-use-fp16_.onnx: https://huggingface.co/RolexAvengers/framers-isnet/tree/main
 birefnet-lite-512, birefnet-lite-512_fp16: https://huggingface.co/studioludens/birefnet-lite-512/tree/main/onnx
+RMBG-2.0_fp16.onnx, RMBG-2.0_int8.onnx, RMBG-2.0_quantized.onnx: https://huggingface.co/baby2008/RMBG-2.0-ONNX/tree/main/onnx
+rmbg-1-4.onnx, rmbg-1-4_quantized.onnx: https://huggingface.co/imgdesignart/rmbg-1-4-onnx/tree/main/onnx bad results
+rmbg_q4f16.onnx: https://huggingface.co/mujibanget/rmbg-onnx/tree/main/onnx
+rmbg.onnx: https://huggingface.co/KPGADANI/rmbg.onnx/tree/main bad results
