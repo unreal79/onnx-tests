@@ -10,3 +10,4 @@ __pycache__/
 *.pyc
 *.onnx
 *.zip
+*.png

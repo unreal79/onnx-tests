@@ -210,7 +210,7 @@ function collect_garbage()
     love.event.pump() -- process events to prevent "not responding" state during reset
     collectgarbage("collect")
     if DEBUG then
-        print("Memory used before garbage collection: " .. mem_count .. " KB. After: " ..
+        print_log("Memory used before garbage collection: " .. mem_count .. " KB. After: " ..
                 math.floor(collectgarbage("count")) .. " KB")
     end
 end
@@ -254,65 +254,40 @@ function print_table(t, run_times)
 
     local function sub_print_r(txt, indent)
         if print_r_cache[tostring(txt)] then
-            print(indent .. "*" .. tostring(txt))
+            print_log(indent .. "*" .. tostring(txt))
         else
             print_r_cache[tostring(txt)]=true
             if type(txt) == "table" then
                 for pos, val in pairs(txt) do
                     if type(val) == "table" then
-                        print(indent .. "[" .. pos .. "] => " .. tostring(txt) .. " {")
+                        print_log(indent .. "[" .. pos .. "] => " .. tostring(txt) .. " {")
                         sub_print_r(val, indent .. string.rep(" ", string.len(pos) + 8))
-                        print(indent .. string.rep(" ", string.len(pos) + 6) .. "}")
+                        print_log(indent .. string.rep(" ", string.len(pos) + 6) .. "}")
                     elseif type(val) == "string" then
-                        print(indent .. "[" .. pos .. '] => "' .. val .. '"')
+                        print_log(indent .. "[" .. pos .. '] => "' .. val .. '"')
                     else
-                        print(indent .. "[" .. pos .. "] => " .. tostring(val))
+                        print_log(indent .. "[" .. pos .. "] => " .. tostring(val))
                     end
                 end
             else
-                print(indent .. tostring(txt))
+                print_log(indent .. tostring(txt))
             end
         end
     end
     if type(t) == "table" then
-        print(tostring(t) .. " {")
+        print_log(tostring(t) .. " {")
         sub_print_r(t, " ")
-        print("}")
+        print_log("}")
     else
         sub_print_r(t,"  ")
     end
-    print()
+    print_log("")
 end
 
 
-local print_to_screen_lines = {} -- table to store printed lines for scrolling
--- Print text to the screen in a console-like manner
---- @param text string text to print
---- @param not_print_to_console boolean|nil if true, the text will not be printed to the console
-function print_to_screen(text, not_print_to_console)
-    text = tostring(text) -- ensure text is a string
-    if not_print_to_console ~= true then
-        print(text)
-    end
-
-    print_to_screen_lines[#print_to_screen_lines + 1] = text
-
-    local w, h = lg.getDimensions()
-    local line_height = font_mplusrounded14:getHeight()
-    local max_lines = math.floor(h / line_height)
-    if #print_to_screen_lines >= max_lines then
-        table.remove(print_to_screen_lines, 1) -- remove oldest line if exceeding max_lines
-    end
-
-    lg.setFont(font_mplusrounded14)
-    lg.setColor(1, 1, 1, 1)
-
-    local i = 1
-    for _, line in ipairs(print_to_screen_lines) do
-        lg.print(line, 10, i * line_height)
-        i = i + 1
-    end
-    lg.present() -- update the screen immediately
+function print_log(text)
+    text = tostring(text)
+    print(text)
 end
 
 

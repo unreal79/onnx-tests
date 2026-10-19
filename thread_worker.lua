@@ -3,7 +3,6 @@ local worker_id = ...
 require("love.timer")
 require("love.event")
 require("love.data")
-require("love.graphics")
 require("love.window")
 require("love.image")
 require("love.font")
@@ -18,12 +17,10 @@ local is_paused = false
 local last_command = ""
 
 
--- local img_a = love.graphics.newImage("assets/parrot.png") -- WARNING: crashes worker
-
 -- Pushes a status message from the worker thread to the main thread
 --- @param message string # status message to send
 local function send_status(message)
-    -- print("Worker " .. tostring(worker_id) .. " status: " .. tostring(message))
+    -- print_log("Worker " .. tostring(worker_id) .. " status: " .. tostring(message))
     status_channel:push(message)
 end
 
@@ -61,7 +58,7 @@ local function worker1_onnx_remove_background(step, command)
             if not session or not session.session then
                 error((session and tostring(session.message)) or "Failed to create ONNX session")
             end
-            print(session.message)
+            print_log(session.message)
 
             local image_data = love.image.newImageData(image_path)
             local output_image_data = Onnx.remove_background(session, image_data, alpha_threshold, true)
@@ -119,7 +116,7 @@ local function worker2_onnx_upscale(step, command)
             if not session or not session.session then
                 error((session and tostring(session.message)) or "Failed to create ONNX session")
             end
-            print(session.message)
+            print_log(session.message)
 
             local image_data = love.image.newImageData(image_path)
             local output_image_data = Onnx.upscale(session, image_data, true, tile_size, tile_overlap)
@@ -176,7 +173,7 @@ local function worker3_onnx_inpaint(step, command)
             if not session or not session.session then
                 error((session and tostring(session.message)) or "Failed to create ONNX session")
             end
-            print(session.message)
+            print_log(session.message)
 
             local image_data = love.image.newImageData(image_path)
             local output_image_data = Onnx.inpaint(session, image_data, alpha_threshold, true)
@@ -233,7 +230,7 @@ local function worker4_onnx_colorize(step, command)
             if not session or not session.session then
                 error((session and tostring(session.message)) or "Failed to create ONNX session")
             end
-            print(session.message)
+            print_log(session.message)
 
             local image_data = love.image.newImageData(image_path)
             local output_image_data = Onnx.colorize(session, image_data, true, model_type)

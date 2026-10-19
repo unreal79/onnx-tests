@@ -260,12 +260,12 @@ function Onnx.init(runtime_path)
     local ok, ort = pcall(ffi.load, runtime_path)
     if not ok then
         State.load_error = "onnxruntime: Failed to load " .. runtime_path .. ".dll"
-        print(State.load_error)
+        print_log(State.load_error)
         Onnx.load_error = State.load_error
         return nil, State
     end
 
-    print("Loaded '" .. runtime_path .. ".dll' library")
+    print_log("Loaded '" .. runtime_path .. ".dll' library")
 
     State.ort = ort
 
@@ -290,7 +290,7 @@ function Onnx.init(runtime_path)
     Onnx.available = true
     State.initialized = true
 
-    print("ONNX Runtime initialized successfully, version: " .. Onnx.runtime_version)
+    print_log("ONNX Runtime initialized successfully, version: " .. Onnx.runtime_version)
     return State.api, State
 end
 
@@ -314,7 +314,7 @@ function Onnx.create_env(log_id, severity)
         "CreateEnv")
     State.env = env_out
 
-    print("ONNX Runtime environment created successfully")
+    print_log("ONNX Runtime environment created successfully")
     return env_out[0]
 end
 
@@ -413,7 +413,7 @@ local function infer_model_input_size(input_shape)
     end
     if type(input_shape) ~= "table" or #input_shape == 0 then
         local default_w_h = 512
-        print("Invalid input shape, using default size " .. default_w_h .. "x" .. default_w_h ..
+        print_log("Invalid input shape, using default size " .. default_w_h .. "x" .. default_w_h ..
             "x" .. channel_count)
         return default_w_h, default_w_h, channel_count
     end
@@ -433,11 +433,11 @@ local function infer_model_input_size(input_shape)
             target_h = shape[3]
             if channel_count > target_w and channel_count > 5 then
                 target_w, channel_count = channel_count, target_w
-                print(string.format("Swapped target_w and channel_count: target_w=%d, channel_count=%d",
+                print_log(string.format("Swapped target_w and channel_count: target_w=%d, channel_count=%d",
                         target_w, channel_count))
             elseif channel_count > target_h and channel_count > 5 then
                 target_h, channel_count = channel_count, target_h
-                print(string.format("Swapped target_h and channel_count: target_h=%d, channel_count=%d",
+                print_log(string.format("Swapped target_h and channel_count: target_h=%d, channel_count=%d",
                         target_h, channel_count))
             end
         elseif shape[#shape] == 3 then
@@ -455,12 +455,12 @@ local function infer_model_input_size(input_shape)
 
     if type(target_w) ~= "number" or type(target_h) ~= "number" or target_w <= 0 or target_h <= 0 then
         local default_w_h = 512
-        print("Invalid target width or height, using default size " .. default_w_h .. "x" ..
+        print_log("Invalid target width or height, using default size " .. default_w_h .. "x" ..
             default_w_h .. " with " .. channel_count .. " channels")
         return default_w_h, default_w_h, channel_count
     end
 
-    print(string.format("Detected target size: %dx%d with %d channels", target_w, target_h, channel_count))
+    print_log(string.format("Detected target size: %dx%d with %d channels", target_w, target_h, channel_count))
     return target_w, target_h, channel_count
 end
 
@@ -488,7 +488,7 @@ local function get_value_shape(value)
 
     local element_count_out = ffi.new("size_t[1]")
     check(State.api.GetTensorShapeElementCount(shape_info_out[0], element_count_out), "GetTensorShapeElementCount")
-    print(string.format("Tensor element count: %d", tonumber(element_count_out[0]) or 0))
+    print_log(string.format("Tensor element count: %d", tonumber(element_count_out[0]) or 0))
     return dims, tonumber(element_count_out[0]) or 0
 end
 
@@ -504,14 +504,14 @@ local function resolve_mask_dimensions(dims, element_count)
         local mask_w = dims[#dims]
         if mask_h ~= nil and mask_w ~= nil and mask_h > 0 and mask_w > 0 and
                 mask_h * mask_w <= element_count then
-            print(string.format("Using mask dimensions from tensor: %dx%d", mask_w, mask_h))
+            print_log(string.format("Using mask dimensions from tensor: %dx%d", mask_w, mask_h))
             return mask_w, mask_h
         end
     end
 
     local square_side = math.floor(math.sqrt(element_count))
     if square_side > 0 and square_side * square_side == element_count then
-        print(string.format("Using square mask dimensions: %dx%d", square_side, square_side))
+        print_log(string.format("Using square mask dimensions: %dx%d", square_side, square_side))
         return square_side, square_side
     end
 
@@ -564,7 +564,7 @@ local function resize_and_normalize(image_data, target_w, target_h, channel_coun
         end
     end
 
-    print("Float buffer size: " .. tostring(float_buffer_size) .. " bytes")
+    print_log("Float buffer size: " .. tostring(float_buffer_size) .. " bytes")
     return float_buffer
 end
 
@@ -607,7 +607,7 @@ local function resize_and_pack_rgb(image_data, target_w, target_h, channel_count
         end
     end
 
-    print("RGB float buffer size: " .. tostring(float_buffer_size) .. " bytes")
+    print_log("RGB float buffer size: " .. tostring(float_buffer_size) .. " bytes")
     return float_buffer
 end
 
@@ -637,7 +637,7 @@ local function resize_and_pack_alpha_mask(image_data, target_w, target_h, alpha_
         end
     end
 
-    print("Mask float buffer size: " .. tostring(float_buffer_size) .. " bytes")
+    print_log("Mask float buffer size: " .. tostring(float_buffer_size) .. " bytes")
     return float_buffer
 end
 
@@ -666,8 +666,8 @@ local function ensure_session_tensor_names(session)
             output_names[#output_names + 1] = get_session_name(session.session, i, false)
         end
 
-        print("Input tensor names: " .. table.concat(input_names, ", "))
-        print("Output tensor names: " .. table.concat(output_names, ", "))
+        print_log("Input tensor names: " .. table.concat(input_names, ", "))
+        print_log("Output tensor names: " .. table.concat(output_names, ", "))
         session.input_names = input_names
         session.output_names = output_names
     end
@@ -995,7 +995,7 @@ local function resize_and_pack_colorizer_input(image_data, target_w, target_h, c
         end
     end
 
-    print("Colorizer float buffer size: " .. tostring(float_buffer_size) .. " floats")
+    print_log("Colorizer float buffer size: " .. tostring(float_buffer_size) .. " floats")
     return float_buffer
 end
 
@@ -1220,7 +1220,7 @@ local function detect_output_value_scale(tensor_data, element_count)
         end
     end
 
-    print(string.format("Upscale output range: min=%f, max=%f", min_value, max_value))
+    print_log(string.format("Upscale output range: min=%f, max=%f", min_value, max_value))
     if max_value > 2.0 or min_value < -0.5 then
         return 1.0 / 255.0
     end
@@ -1237,14 +1237,14 @@ local function get_session_input_shape(session_or_ptr, input_name)
     local session_ptr = session_or_ptr
     if type(session_or_ptr) == "table" then
         if session_or_ptr.session == nil then
-            print("Session metadata does not contain a valid session handle")
+            print_log("Session metadata does not contain a valid session handle")
             return nil
         end
         session_ptr = session_or_ptr.session
     end
 
     if type(input_name) ~= "string" or input_name == "" then
-        print("Invalid input name: " .. tostring(input_name))
+        print_log("Invalid input name: " .. tostring(input_name))
         return nil
     end
 
@@ -1280,13 +1280,13 @@ local function get_session_input_shape(session_or_ptr, input_name)
             --     check(state.api.ReleaseTensorTypeAndShapeInfo(tensor_info[0]), "ReleaseTensorTypeAndShapeInfo") -- TODO
             -- end
 
-            print(string.format("Detected input shape for tensor '%s': %s", input_name,
+            print_log(string.format("Detected input shape for tensor '%s': %s", input_name,
                     table.concat(dims, "x")))
             return dims
         end
     end
 
-    print("Input tensor not found: " .. tostring(input_name))
+    print_log("Input tensor not found: " .. tostring(input_name))
     return nil
 end
 
@@ -1349,7 +1349,7 @@ function Onnx.remove_background(session, image_or_data, alpha_threshold, return_
             max_value = mask_value
         end
     end
-    print(string.format("Mask value range: min=%f, max=%f", min_value, max_value))
+    print_log(string.format("Mask value range: min=%f, max=%f", min_value, max_value))
 
     for y = 0, src_h - 1 do
         local mask_y = math.min(mask_h - 1, math.floor((y + 0.5) * mask_h / src_h))
@@ -1368,10 +1368,10 @@ function Onnx.remove_background(session, image_or_data, alpha_threshold, return_
     end
 
     local r, g, b, a = output_image_data:getPixel(0, 0)
-    print(string.format("Top-left pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
+    print_log(string.format("Top-left pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
             r * 255, g * 255, b * 255, a * 255, a))
     r, g, b, a = output_image_data:getPixel(src_w / 2 + 1, src_h / 2 + 1)
-    print(string.format("Center pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
+    print_log(string.format("Center pixel: R=%d, G=%d, B=%d, A=%d, alpha=%f",
             r * 255, g * 255, b * 255, a * 255, a))
 
     release_ort_value(input_value)
@@ -1380,18 +1380,18 @@ function Onnx.remove_background(session, image_or_data, alpha_threshold, return_
     --     state.api.ReleaseMemoryInfo(mem_info_out[0]) -- TODO: crash
     --     mem_info_out[0] = NULL
     -- else
-    --     print("Memory info was not released because it is nil or already NULL")
+    --     print_log("Memory info was not released because it is nil or already NULL")
     -- end
     -- if session.session ~= nil and session.session ~= NULL and state.api.ReleaseSession ~= nil then
     --     state.api.ReleaseSession(session.session) -- TODO: crash
     --     session.session = NULL
     -- else
-    --     print("Session was not released because it is nil or already NULL or session.session is nil")
+    --     print_log("Session was not released because it is nil or already NULL or session.session is nil")
     -- end
     -- if state.api.ReleaseEnv ~= nil then
     --     state.api.ReleaseEnv(session.env) -- TODO: crash
     -- else
-    --     print("Environment was not released because ReleaseEnv is nil")
+    --     print_log("Environment was not released because ReleaseEnv is nil")
     -- end
 
     if return_image_data then
@@ -1443,7 +1443,7 @@ function Onnx.inpaint(session, image_or_data, alpha_threshold, return_image_data
     local output_value_scale = detect_output_value_scale(raw_output, output_element_count)
     local output_image_data = love.image.newImageData(src_w, src_h)
 
-    print(string.format("Inpaint output size: %dx%d", out_w, out_h))
+    print_log(string.format("Inpaint output size: %dx%d", out_w, out_h))
 
     for y = 0, src_h - 1 do
         local sample_y = math.min(out_h - 1, math.floor((y + 0.5) * out_h / src_h))
@@ -1524,7 +1524,7 @@ function Onnx.colorize(session, image_or_data, return_image_data, model_kind)
             output_element_count) or 1.0
     local output_image_data = love.image.newImageData(src_w, src_h)
 
-    print(string.format("Colorize output size: %dx%d", out_w, out_h))
+    print_log(string.format("Colorize output size: %dx%d", out_w, out_h))
 
     for y = 0, src_h - 1 do
         local sample_y = math.min(out_h - 1, math.floor((y + 0.5) * out_h / src_h))
@@ -1631,7 +1631,7 @@ function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile
         local owned_tile_top = owned_src_top - tile_y
 
         for tile_x_index, tile_x in ipairs(x_positions) do
-            print(string.format("Processing tile %d out of %d",
+            print_log(string.format("Processing tile %d out of %d",
                     (tile_y_index - 1) * #x_positions + tile_x_index, #x_positions * #y_positions))
             local _, tile_src_end_x, owned_src_left, owned_src_right = resolve_tile_ownership(x_positions,
                     tile_x_index, src_w, tile_size)
@@ -1662,8 +1662,8 @@ function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile
                     math.max(1, math.floor((src_h * scale_y) + 0.5))
                 )
                 output_value_scale = detect_output_value_scale(raw_output, output_element_count)
-                print(string.format("Detected upscale factor: %.4fx%.4f", scale_x, scale_y))
-                print(string.format("Upscaled image size: %dx%d", output_image_data:getWidth(),
+                print_log(string.format("Detected upscale factor: %.4fx%.4f", scale_x, scale_y))
+                print_log(string.format("Upscaled image size: %dx%d", output_image_data:getWidth(),
                     output_image_data:getHeight()))
             end
 
@@ -1701,7 +1701,7 @@ function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile
             release_ort_value(output_value)
         end
     end
-    print(string.format("Final output image size: %dx%d", output_image_data:getWidth(), output_image_data:getHeight()))
+    print_log(string.format("Final output image size: %dx%d", output_image_data:getWidth(), output_image_data:getHeight()))
 
     if output_image_data == nil then
         error("Upscale did not produce any output tiles", 2)

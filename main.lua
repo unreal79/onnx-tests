@@ -39,23 +39,27 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_scale2x.onnx" -- 4 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
-local MODEL_COLORIZER_TYPE = "ddcolor" -- possible values: "colorize", "deoldify", "ddcolor"
-local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_modelscope.onnx" -- 17/19 sec, very good, RAM hungry
+local MODEL_COLORIZER_TYPE = "ddcolor" -- possible values: "ddcolor", "deoldify", "colorize"
+local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-512-fp16.onnx" -- 11/16 sec, very good, average RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_modelscope.onnx" -- 17/19 sec, very good, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_artistic.onnx" -- 17/25 sec, good, but very small bugs, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_paper_tiny.onnx" -- 6/6 sec, ok, but small bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-fp16.onnx" -- 3/3 sec, ok, but small bugs
--- local MODEL_COLORIZER_PATH = "models/colorize/colorear_v1.onnx" -- 3/3 sec, ok, but small bugs
--- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 20/48 sec, bad results -- results for small/medium Eiffel images
+-- local MODEL_COLORIZER_PATH = "models/colorize/colorear_v1.onnx" -- 3/3 sec, ok, but big bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-large-hq8.onnx" -- 4/7 sec, good, but small bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-large-int8.onnx" -- 9/9 sec, very good, but small bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 26/97 sec, average RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyStable_dyn.onnx" -- 33/155 sec, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeoldifyVideo_dyn.onnx" -- 32/81 sec, RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/deoldify_quantized.onnx" -- 4/8 sec, bad, many bugs everywhere
+-- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 20/48 sec, bad, low resolution
 
 local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, average RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 50 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite_fp16.onnx" -- 70 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_fp16.onnx" -- 75 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_quantized.onnx" -- 100 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_int8.onnx" -- 110 sec, very RAM hungry
@@ -94,10 +98,10 @@ local SYSTEM_CODE_PAGE = 1251
 
 require("libs.errorhandler")
 utf8 = require("utf8")
+require("utils")
 Onnx = require("onnx")
 Threading = require("libs.threading")
 CameraMgr = require("libs.CameraMgr.lib.CameraMgr").newManager()
-require("utils")
 
 lg = love.graphics
 la = love.audio
@@ -109,7 +113,7 @@ local img_no_background = nil -- output image after background removal
 local img_upscaled = nil -- output image after upscaling
 local img_inpainted = nil -- output image after inpainting
 local img_colorized = nil -- output image after colorizing
-font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
+local font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
 local processing_start_time = nil
 local last_elapsed_seconds = nil
 local active_drag_buttons = 0
@@ -136,7 +140,7 @@ local function apply_screen_filter_mode()
     apply_screen_filter_to_image(img_no_background)
     apply_screen_filter_to_image(img_inpainted)
     apply_screen_filter_to_image(img_colorized)
-    print("Screen smoothing: " .. mode.label)
+    print_log("Screen smoothing: " .. mode.label)
 end
 
 
@@ -154,13 +158,13 @@ end
 
 local function start_background_removal()
     if Threading.is_running(1) then
-        print_to_screen("Background removal is already running")
+        print_log("Background removal is already running")
         return
     end
 
     local ok, err = Threading.run(THREAD_WORKER_PATH, 1, {"remove_background"})
     if not ok then
-        print_to_screen("Failed to start the worker thread: " .. tostring(err))
+        print_log("Failed to start the worker thread: " .. tostring(err))
         return
     end
 
@@ -168,24 +172,24 @@ local function start_background_removal()
             tostring(BACKGROUND_REMOVAL_THRESHOLD))
     ok, err = Threading.command(1, command)
     if not ok then
-        print_to_screen("Failed to queue background removal: " .. tostring(err))
+        print_log("Failed to queue background removal: " .. tostring(err))
         return
     end
 
     processing_start_time = love.timer.getTime()
     last_elapsed_seconds = nil
-    print_to_screen("Started background removal in a worker thread...")
+    print_log("Started background removal in a worker thread...")
 end
 
 local function start_upscale()
     if Threading.is_running(2) then
-        print_to_screen("Upscale is already running")
+        print_log("Upscale is already running")
         return
     end
 
     local ok, err = Threading.run(THREAD_WORKER_PATH, 2, {"upscale"})
     if not ok then
-        print_to_screen("Failed to start the worker thread: " .. tostring(err))
+        print_log("Failed to start the worker thread: " .. tostring(err))
         return
     end
 
@@ -193,25 +197,25 @@ local function start_upscale()
             tostring(UPSCALER_TILE_SIZE), tostring(UPSCALER_TILE_OVERLAP))
     ok, err = Threading.command(2, command)
     if not ok then
-        print_to_screen("Failed to queue upscale: " .. tostring(err))
+        print_log("Failed to queue upscale: " .. tostring(err))
         return
     end
 
     processing_start_time = love.timer.getTime()
     last_elapsed_seconds = nil
-    print_to_screen("Started upscale in a worker thread...")
+    print_log("Started upscale in a worker thread...")
 end
 
 
 local function start_inpaint()
     if Threading.is_running(3) then
-        print_to_screen("Inpaint is already running")
+        print_log("Inpaint is already running")
         return
     end
 
     local ok, err = Threading.run(THREAD_WORKER_PATH, 3, {"inpaint"})
     if not ok then
-        print_to_screen("Failed to start the worker thread: " .. tostring(err))
+        print_log("Failed to start the worker thread: " .. tostring(err))
         return
     end
 
@@ -219,25 +223,25 @@ local function start_inpaint()
             tostring(INPAINTER_ALPHA_THRESHOLD))
     ok, err = Threading.command(3, command)
     if not ok then
-        print_to_screen("Failed to queue inpaint: " .. tostring(err))
+        print_log("Failed to queue inpaint: " .. tostring(err))
         return
     end
 
     processing_start_time = love.timer.getTime()
     last_elapsed_seconds = nil
-    print_to_screen("Started inpainting in a worker thread...")
+    print_log("Started inpainting in a worker thread...")
 end
 
 
 local function start_colorizing()
     if Threading.is_running(4) then
-        print_to_screen("Colorizing is already running")
+        print_log("Colorizing is already running")
         return
     end
 
     local ok, err = Threading.run(THREAD_WORKER_PATH, 4, {"colorize"})
     if not ok then
-        print_to_screen("Failed to start the worker thread: " .. tostring(err))
+        print_log("Failed to start the worker thread: " .. tostring(err))
         return
     end
 
@@ -245,20 +249,20 @@ local function start_colorizing()
         MODEL_COLORIZER_TYPE)
     ok, err = Threading.command(4, command)
     if not ok then
-        print_to_screen("Failed to queue colorizing: " .. tostring(err))
+        print_log("Failed to queue colorizing: " .. tostring(err))
         return
     end
 
     processing_start_time = love.timer.getTime()
     last_elapsed_seconds = nil
-    print_to_screen("Started colorizing in a worker thread...")
+    print_log("Started colorizing in a worker thread...")
 end
 
 
 local function final_message_and_save_image(thread_id, image_data, model_path)
-    print_to_screen(string.format("ONNX processing time: %.3f seconds",
+    print_log(string.format("ONNX processing time: %.3f seconds",
         love.timer.getTime() - processing_start_time))
-    print_to_screen(string.format("Memory usage - RAM: %d " ..
+    print_log(string.format("Memory usage - RAM: %d " ..
         "MB, Virtual: %d MB, Peak: %d MB", get_memory_usage()))
     processing_start_time = nil
     last_elapsed_seconds = nil
@@ -273,12 +277,12 @@ local function final_message_and_save_image(thread_id, image_data, model_path)
     local normalized_output_dir = absolute_output_dir:gsub("/", package.config:sub(1, 1))
 
     local ok, err_or_result = pcall(function()
-        print("Saving processed image to: " .. codepage2codepage(absolute_output_path, SYSTEM_CODE_PAGE, 65001))
-        print("Creating output directory: " .. codepage2codepage(normalized_output_dir, SYSTEM_CODE_PAGE, 65001))
+        print_log("Saving processed image to: " .. codepage2codepage(absolute_output_path, SYSTEM_CODE_PAGE, 65001))
+        print_log("Creating output directory: " .. codepage2codepage(normalized_output_dir, SYSTEM_CODE_PAGE, 65001))
         local f, err = io.popen("mkdir " .. normalized_output_dir)
         love.timer.sleep(0.1)
         if f == nil then
-            print("Failed to create subprocess: " .. tostring(err))
+            print_log("Failed to create subprocess: " .. tostring(err))
         else
             f:close()
         end
@@ -290,9 +294,9 @@ local function final_message_and_save_image(thread_id, image_data, model_path)
     end)
 
     if ok then
-        print("Saved processed image to: " .. output_path)
+        print_log("Saved processed image to: " .. output_path)
     else
-        print("Failed to save processed image: " .. tostring(err_or_result))
+        print_log("Failed to save processed image: " .. tostring(err_or_result))
     end
 end
 
@@ -302,13 +306,13 @@ function love.load()
     CameraMgr.setCoords(lg.getWidth() / 2, lg.getHeight() / 2)
     apply_screen_filter_mode()
 
-    print_to_screen("Love2D loaded")
+    print_log("Love2D loaded")
     local working_set, commit_size, peak_working_set = get_memory_usage()
     if working_set and commit_size and peak_working_set then
-        print_to_screen(string.format("Memory usage - Working Set: %.2f MB, Commit " ..
+        print_log(string.format("Memory usage - Working Set: %.2f MB, Commit " ..
             "Size: %.2f MB, Peak Working Set: %.2f MB", working_set, commit_size, peak_working_set))
     else
-        print_to_screen("Failed to get memory usage")
+        print_log("Failed to get memory usage")
     end
 
     if WORKING_MODE == "background_removal" then
@@ -334,7 +338,7 @@ function love.update(dt)
     if processing_start_time then
         for i = 1, 4 do
             if Threading.has_crashed(i) then
-                print_to_screen("Worker thread " .. tostring(i) .. " has crashed")
+                print_log("Worker thread " .. tostring(i) .. " has crashed")
                 processing_start_time = nil
                 last_elapsed_seconds = nil
                 Threading.stop(i)
@@ -346,7 +350,7 @@ function love.update(dt)
         if last_elapsed_seconds ~= elapsed_seconds and elapsed_seconds > 0 then -- once per second
             last_elapsed_seconds = elapsed_seconds
             local working_set, commit_size, peak_working_set = get_memory_usage()
-            print_to_screen(string.format("  [Timer]: %d seconds. Memory usage - RAM: %d " ..
+            print_log(string.format("  [Timer]: %d seconds. Memory usage - RAM: %d " ..
                 "MB, Peak: %d MB", elapsed_seconds, working_set, peak_working_set))
 
             -- Check messages from worker 1 - background removal
@@ -357,11 +361,11 @@ function love.update(dt)
                 local output_image_data = love.image.newImageData(decoded_FileData)
                 img_no_background = lg.newImage(output_image_data)
                 apply_screen_filter_to_image(img_no_background)
-                print_to_screen("Background removed from image successfully")
+                print_log("Background removed from image successfully")
                 final_message_and_save_image(1, output_image_data, MODEL_BG_REMOVER_PATH)
             elseif last_message_1 and last_message_1:match("^remove_background_error:") then
                 local error_text = last_message_1:sub(#"remove_background_error:" + 1)
-                print_to_screen("Background removal failed: " .. error_text)
+                print_log("Background removal failed: " .. error_text)
                 final_message_and_save_image(1)
             end
 
@@ -373,11 +377,11 @@ function love.update(dt)
                 local output_image_data = love.image.newImageData(decoded_FileData)
                 img_upscaled = lg.newImage(output_image_data)
                 apply_screen_filter_to_image(img_upscaled)
-                print_to_screen("Image upscaled successfully")
+                print_log("Image upscaled successfully")
                 final_message_and_save_image(2, output_image_data, MODEL_UPSCALER_PATH)
             elseif last_message_2 and last_message_2:match("^upscale_error:") then
                 local error_text = last_message_2:sub(#"upscale_error:" + 1)
-                print_to_screen("Image upscaling failed: " .. error_text)
+                print_log("Image upscaling failed: " .. error_text)
                 final_message_and_save_image(2)
             end
 
@@ -389,11 +393,11 @@ function love.update(dt)
                 local output_image_data = love.image.newImageData(decoded_FileData)
                 img_inpainted = lg.newImage(output_image_data)
                 apply_screen_filter_to_image(img_inpainted)
-                print_to_screen("Image inpainted successfully")
+                print_log("Image inpainted successfully")
                 final_message_and_save_image(3, output_image_data, MODEL_INPAINTER_PATH)
             elseif last_message_3 and last_message_3:match("^inpaint_error:") then
                 local error_text = last_message_3:sub(#"inpaint_error:" + 1)
-                print_to_screen("Image inpainting failed: " .. error_text)
+                print_log("Image inpainting failed: " .. error_text)
                 final_message_and_save_image(3)
             end
 
@@ -405,11 +409,11 @@ function love.update(dt)
                 local output_image_data = love.image.newImageData(decoded_FileData)
                 img_colorized = lg.newImage(output_image_data)
                 apply_screen_filter_to_image(img_colorized)
-                print_to_screen("Image colorized successfully")
+                print_log("Image colorized successfully")
                 final_message_and_save_image(4, output_image_data, MODEL_COLORIZER_PATH)
             elseif last_message_4 and last_message_4:match("^colorize_error:") then
                 local error_text = last_message_4:sub(#"colorize_error:" + 1)
-                print_to_screen("Image colorizing failed: " .. error_text)
+                print_log("Image colorizing failed: " .. error_text)
                 final_message_and_save_image(4)
             end
         end
