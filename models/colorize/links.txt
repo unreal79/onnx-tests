@@ -3,6 +3,11 @@ ddcolor_artistic.onnx, ddcolor_modelscope.onnx, ddcolor_paper_tiny.onnx: https:/
 ddcolor-fp16.onnx: https://huggingface.co/wavespeed/image-colorizer/tree/main
 colorear_v1.onnx: https://huggingface.co/ingmebs/bspicture-modelos/tree/main
 ddcolor-large-hq8.onnx, ddcolor-large-int8.onnx: https://huggingface.co/Faridzar/ddcolor-mirror/tree/main
+ddcolor-tiny.onnx: https://huggingface.co/rishi1527/colorfusion-ddcolor/tree/main
+ddcolor-tiny-fp16.onnx: https://huggingface.co/edgetools/ddcolor/tree/main
+ddcolor_tiny_fp16.onnx: https://huggingface.co/lensmera/lensmera-color-ddcolor/tree/main
+photorestore-ddcolor.onnx: https://huggingface.co/RainBowDashX/photorestore-ddcolor/tree/main
+ptl1998naganodevall-ddcolor.onnx: https://huggingface.co/ptl1998naganodevall/ddcolor/tree/main
 DeOldifyArtistic_dyn.onnx, DeOldifyStable_dyn.onnx, DeoldifyVideo_dyn.onnx: https://github.com/instant-high/deoldify-onnx > https://drive.google.com/drive/folders/1bU9Zj7zGVEujIzvDTb1b9cyWU3s__WQR renamed
 deoldify_quantized.onnx: https://huggingface.co/xrds/deoldify/tree/main/onnx
 manga-colorize-fp16.onnx: https://huggingface.co/Faridzar/manga-colorization-v2-onnx

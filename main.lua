@@ -1,7 +1,7 @@
 -- main.lua
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
-local WORKING_MODE = "background_removal"
+local WORKING_MODE = "colorizing"
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
@@ -48,6 +48,11 @@ local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-512-fp16.onnx" -- 11/16 se
 -- local MODEL_COLORIZER_PATH = "models/colorize/colorear_v1.onnx" -- 3/3 sec, ok, but big bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-large-hq8.onnx" -- 4/7 sec, good, but small bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-large-int8.onnx" -- 9/9 sec, very good, but small bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-tiny.onnx" -- 6/6 sec, ok, but small bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_tiny_fp16.onnx" -- 7/8 sec, ok, but small bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-tiny-fp16.onnx" -- 7/9 sec, ok, but small bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/photorestore-ddcolor.onnx" -- 7/7 sec, ok, but small bugs
+-- local MODEL_COLORIZER_PATH = "models/colorize/ptl1998naganodevall-ddcolor.onnx" -- 3/4 sec, ok, but small bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 26/97 sec, average RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyStable_dyn.onnx" -- 33/155 sec, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeoldifyVideo_dyn.onnx" -- 32/81 sec, RAM hungry
@@ -113,7 +118,7 @@ local img_no_background = nil -- output image after background removal
 local img_upscaled = nil -- output image after upscaling
 local img_inpainted = nil -- output image after inpainting
 local img_colorized = nil -- output image after colorizing
-local font_mplusrounded14 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 14)
+local font_mplusrounded16 = lg.newFont("assets/fonts/MPLUSRounded1c-Regular.ttf", 16)
 local processing_start_time = nil
 local last_elapsed_seconds = nil
 local active_drag_buttons = 0
@@ -444,7 +449,7 @@ function love.draw()
     end
 
     lg.setColor(1, 1, 1, 1)
-    lg.setFont(font_mplusrounded14)
+    lg.setFont(font_mplusrounded16)
 
     local source_image = img_parrot
     if WORKING_MODE == "colorizing" then
