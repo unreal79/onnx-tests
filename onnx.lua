@@ -338,8 +338,8 @@ function Onnx.create_session(model_path)
     local options_out = ffi.new("OrtSessionOptions*[1]")
     check(api.CreateSessionOptions(options_out), "CreateSessionOptions")
     check(api.DisableProfiling(options_out[0]), "DisableProfiling")
-    check(api.SetSessionGraphOptimizationLevel(options_out[0],
-        1), "SetSessionGraphOptimizationLevel") -- sets the graph optimization level to basic=1
+    check(api.SetSessionGraphOptimizationLevel(options_out[0], 1),
+        "SetSessionGraphOptimizationLevel") -- sets the graph optimization level to basic=1
     -- check(api.DisableMemPattern(options_out[0]), "DisableMemPattern") -- ?
     -- check(api.EnableMemPattern(options_out[0]), "EnableMemPattern")
     check(api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
@@ -516,20 +516,6 @@ local function resolve_mask_dimensions(dims, element_count)
     end
 
     error("Unable to determine output mask dimensions from ONNX output tensor", 2)
-end
-
-
---- Normalizes a raw mask value into the [0, 1] range.
---- @param mask_value number # Scalar value returned by the segmentation model.
---- @param min_value number # Minimum observed mask value.
---- @param max_value number # Maximum observed mask value.
---- @return number # Normalized alpha value in the [0, 1] range.
-local function normalize_mask_value(mask_value, min_value, max_value)
-    if max_value > min_value then
-        return (mask_value - min_value) / (max_value - min_value)
-    end
-
-    return math.max(0.0, math.min(1.0, mask_value))
 end
 
 
@@ -1356,14 +1342,16 @@ function Onnx.remove_background(session, image_or_data, alpha_threshold, return_
         for x = 0, src_w - 1 do
             local mask_x = math.min(mask_w - 1, math.floor((x + 0.5) * mask_w / src_w))
             local mask_index = mask_y * mask_w + mask_x
-            local alpha = normalize_mask_value(output_mask[mask_index], min_value, max_value)
+            local alpha = math.clamp(output_mask[mask_index], 0, 1)
 
             local r, g, b, a = image_data:getPixel(x, y)
-            local alpha_mask = alpha >= alpha_threshold and 1 or 0
-            output_image_data:setPixel(x, y,
-                r and alpha_mask == 1 and r or 0,
-                g and alpha_mask == 1 and g or 0,
-                b and alpha_mask == 1 and b or 0, alpha_mask)
+            local alpha_mask = 0
+            if alpha > alpha_threshold then
+                local threshold_span = math.max(1 - alpha_threshold, 1e-6)
+                local normalized_alpha = math.clamp((alpha - alpha_threshold) / threshold_span, 0, 1)
+                alpha_mask = normalized_alpha * normalized_alpha * (3 - 2 * normalized_alpha)
+            end
+            output_image_data:setPixel(x, y, r, g, b, math.clamp(a * alpha_mask, 0, 1))
         end
     end
 

@@ -13,6 +13,7 @@ isnet-general-use-fp16.onnx: https://huggingface.co/tiper-penta/isnet-general-us
 isnet-general-use-fp16_.onnx: https://huggingface.co/RolexAvengers/framers-isnet/tree/main
 quitar_fondo_v2.onnx: https://huggingface.co/ingmebs/bspicture-modelos IS-net based, threshold dependent
 Lucida models: https://huggingface.co/PinkPixel/lucida-onnx/tree/main
+fey-nobg_fp16.onnx: https://huggingface.co/PinkPixel/fey-nobg-onnx
 RMBG-2.0_fp16.onnx, RMBG-2.0_int8.onnx, RMBG-2.0_quantized.onnx: https://huggingface.co/baby2008/RMBG-2.0-ONNX/tree/main/onnx
 rmbg-1-4.onnx, rmbg-1-4_quantized.onnx: https://huggingface.co/imgdesignart/rmbg-1-4-onnx/tree/main/onnx bad results
 rmbg_q4f16.onnx: https://huggingface.co/mujibanget/rmbg-onnx/tree/main/onnx

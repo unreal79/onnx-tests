@@ -1,7 +1,7 @@
 -- main.lua
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
-local WORKING_MODE = "colorizing"
+local WORKING_MODE = "background_removal"
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
@@ -11,6 +11,8 @@ local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with
 local IMAGE_BW_PATH = "assets/eiffel_bw_small.png" -- Input image in black and white, smaller version
 
 ---- Models. Uncomment the one you want to use for upscaling.
+local UPSCALER_TILE_SIZE = 256
+local UPSCALER_TILE_OVERLAP = 32
 local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Archivist_Soft.onnx" -- 7 sec, bad, eats details
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good
@@ -59,13 +61,16 @@ local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-512-fp16.onnx" -- 11/16 se
 -- local MODEL_COLORIZER_PATH = "models/colorize/deoldify_quantized.onnx" -- 4/8 sec, bad, many bugs everywhere
 -- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 20/48 sec, bad, low resolution
 
+local BACKGROUND_REMOVAL_THRESHOLD = 0.25
 local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, average RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 50 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite_fp16.onnx" -- 70 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
-local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_fp16.onnx" -- 75 sec, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/fey-nobg_fp16.onnx" -- 80 sec, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/lucida.onnx" -- 65 sec, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_fp16.onnx" -- 75 sec, very RAM hungry, crashed with SetSessionGraphOptimizationLevel 1
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_quantized.onnx" -- 100 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_int8.onnx" -- 110 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg_q4f16.onnx" -- 130 sec, very RAM hungry, requires setting width to 1024
@@ -73,7 +78,9 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg-1-4_quantized.onnx" -- 5 sec, very bad result
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg.onnx" -- 5 sec, very bad result
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/quitar_fondo_v2.onnx" -- 30 sec, threshold dependent, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/isnet-general-use.onnx" -- 2 sec, need code changed
 
+local INPAINTER_ALPHA_THRESHOLD = 0.001
 local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 10 sec
@@ -81,11 +88,6 @@ local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_js.onnx" -- 10 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_1024.onnx" -- 58 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_2048.onnx" -- 250 sec, very RAM hungry
-
-local BACKGROUND_REMOVAL_THRESHOLD = 0.25
-local INPAINTER_ALPHA_THRESHOLD = 0.001
-local UPSCALER_TILE_SIZE = 256
-local UPSCALER_TILE_OVERLAP = 32
 
 local CAMERA_ZOOM_STEP = 1.15
 local CAMERA_MIN_SCALE = 0.2
@@ -433,7 +435,7 @@ end
 
 function love.draw()
     lg.clear(0.85, 0.85, 0.85, 1)
-    local checker_size = 10
+    local checker_size = 25
     local screen_width = lg.getWidth()
     local screen_height = lg.getHeight()
 
@@ -442,7 +444,7 @@ function love.draw()
             if ((x / checker_size) + (y / checker_size)) % 2 == 0 then
                 lg.setColor(0.85, 0.85, 0.85, 1)
             else
-                lg.setColor(0.65, 0.65, 0.65, 1)
+                lg.setColor(0.0, 0.0, 0.65, 1)
             end
             lg.rectangle("fill", x, y, checker_size, checker_size)
         end
