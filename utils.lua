@@ -51,6 +51,17 @@ ffi.cdef([[
     int WideCharToMultiByte(unsigned int CodePage, unsigned long dwFlags,
         const wchar_t* lpWideCharStr, int cchWideChar, char* lpMultiByteStr, int cbMultiByte,
         const char* lpDefaultChar, int* lpUsedDefaultChar);
+    typedef struct {
+        WORD wYear;
+        WORD wMonth;
+        WORD wDayOfWeek;
+        WORD wDay;
+        WORD wHour;
+        WORD wMinute;
+        WORD wSecond;
+        WORD wMilliseconds;
+    } SYSTEMTIME;
+    void GetLocalTime(SYSTEMTIME* lpSystemTime);
 ]])
 
 
@@ -285,9 +296,52 @@ function print_table(t, run_times)
 end
 
 
-function print_log(text)
+_G.log_file_handle = nil
+
+--- Prints text to the console and, unless console_only is true, appends it to a timestamped log file.
+--- The log file starts with its creation date and time, and each logged line is prefixed with time only.
+--- @param text any # Text to log.
+--- @param console_only boolean|nil # When true, skips writing to the log file.
+function print_log(text, console_only)
     text = tostring(text)
     print(text)
+
+    if text == "" or console_only then
+        return
+    end
+
+    local system_time = ffi.new("SYSTEMTIME[1]")
+    ffi.C.GetLocalTime(system_time)
+    local timestamp_parts = system_time[0]
+    if log_file_handle == nil then
+        local source_dir = love.filesystem.getSource()
+        local separator = package.config:sub(1, 1)
+        local filename_timestamp = string.format("%04d%02d%02d-%02d_%02d_%02d",
+            timestamp_parts.wYear, timestamp_parts.wMonth, timestamp_parts.wDay, timestamp_parts.wHour,
+            timestamp_parts.wMinute, timestamp_parts.wSecond)
+        local log_path = source_dir .. separator .. "_output" .. separator ..
+            filename_timestamp .. ".log"
+        local handle, err = io.open(log_path, "a")
+        if not handle then
+            error("Failed to open log file: " .. tostring(err), 2)
+        end
+
+        log_file_handle = handle
+        local creation_timestamp = string.format("%04d.%02d.%02d %02d:%02d:%02d.%03d",
+            timestamp_parts.wYear, timestamp_parts.wMonth, timestamp_parts.wDay, timestamp_parts.wHour,
+            timestamp_parts.wMinute, timestamp_parts.wSecond, timestamp_parts.wMilliseconds)
+        log_file_handle:write("Log created on: " .. creation_timestamp .. "\n")
+    end
+
+    local time_prefix = string.format("%02d:%02d:%02d.%03d",
+        timestamp_parts.wHour, timestamp_parts.wMinute, timestamp_parts.wSecond, timestamp_parts.wMilliseconds) .. " "
+    local logged_text = time_prefix .. text:gsub("\n", "\n" .. time_prefix)
+    if text:sub(-1) ~= "\n" then
+        logged_text = logged_text .. "\n"
+    end
+
+    log_file_handle:write(logged_text)
+    log_file_handle:flush()
 end
 
 

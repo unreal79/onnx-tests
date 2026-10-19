@@ -98,7 +98,7 @@ local SYSTEM_CODE_PAGE = 1251
 
 require("libs.errorhandler")
 utf8 = require("utf8")
-require("utils")
+-- require("utils")
 Onnx = require("onnx")
 Threading = require("libs.threading")
 CameraMgr = require("libs.CameraMgr.lib.CameraMgr").newManager()
