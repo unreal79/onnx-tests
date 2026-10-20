@@ -66,7 +66,7 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 se
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 50 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite_fp16.onnx" -- 70 sec, very RAM hungry
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/fey-nobg_fp16.onnx" -- 80 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/lucida.onnx" -- 65 sec, very RAM hungry
@@ -105,8 +105,8 @@ local SYSTEM_CODE_PAGE = 1251
 
 require("libs.errorhandler")
 utf8 = require("utf8")
--- require("utils")
-Onnx = require("onnx")
+require("utils")
+-- Onnx = require("onnx")
 Threading = require("libs.threading")
 CameraMgr = require("libs.CameraMgr.lib.CameraMgr").newManager()
 

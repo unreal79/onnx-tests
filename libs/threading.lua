@@ -1,22 +1,18 @@
 -- Threading functionality
+-- Workers are managed with separate threads and communication channels
 
 local Threading = {}
 
 local Workers = {} -- table to hold worker state for each worker_id
 
--- local module_path = select(1, ...):match("(.-)[^%.]+$")
--- local WORKER_FILE = (module_path and module_path:gsub("%.", "/") or "libs/threading/") .. "threading_worker.lua"
+local  WORKER_CRASH_AWAIT_TIME = 3 -- seconds to wait before considering a worker as crashed
 
 
 --- Removes all pending values from a thread channel
 --- @param channel love.Channel|nil # channel to clear
 local function clear_channel(channel)
-    if not channel then
-        return
-    end
-
-    while channel:pop() ~= nil do
-    end
+    if not channel then return end
+    while channel:pop() ~= nil do end
 end
 
 
@@ -102,7 +98,7 @@ local function is_running(state)
     if state.thread and state.has_started then
         local now = love.timer.getTime()
         local last_status = state.last_status_at or state.started_at or now
-        if now - last_status > 3 then
+        if now - last_status > WORKER_CRASH_AWAIT_TIME then
             mark_crashed(state)
             return false
         end
@@ -239,12 +235,9 @@ function Threading.update()
                 state.started_at = now
                 state.last_status_at = now
             elseif message:match("^startup_error:") or message:match("^crashed:") then
+                print("Worker crashed: " .. tostring(message))
                 mark_crashed(state)
             end
-
-            -- if DEBUG then
-            -- 	print("[Thread " .. tostring(worker_id) .. "] " .. tostring(message))
-            -- end
 
             message = state.status_channel:pop()
         end
@@ -252,11 +245,9 @@ function Threading.update()
         if state.thread then
             if not state.thread:isRunning() then
                 mark_crashed(state)
-            -- elseif not state.has_started and love.timer.getTime() - state.started_at > 2 then
-            ---- gives false positives
-            --     mark_crashed(state)
             elseif state.has_started and state.last_status_at > 0 and
                     love.timer.getTime() - state.last_status_at > 3 then
+                -- 3 seconds without status update indicates a crash
                 mark_crashed(state)
             end
         end

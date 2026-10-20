@@ -7,7 +7,9 @@ require("love.window")
 require("love.image")
 require("love.font")
 require("love.system")
+require("utils")
 
+local ONNXRUNTIME_PATH = "onnxruntime/onnxruntime"
 
 local control_channel = love.thread.getChannel("threading_control_" .. worker_id)
 local status_channel = love.thread.getChannel("threading_status_" .. worker_id)
@@ -23,6 +25,29 @@ local function send_status(message)
     -- print_log("Worker " .. tostring(worker_id) .. " status: " .. tostring(message))
     status_channel:push(message)
 end
+
+--- Helper function to initialize ONNX Runtime
+--- @param model_path string # path to the ONNX model file
+local function onnx_init_and_create_session(model_path, image_path)
+    local Onnx = require("onnx")
+    local onnx_api, init_state = Onnx.init(ONNXRUNTIME_PATH)
+    if not onnx_api then
+        print_log("Failed to initialize ONNX Runtime")
+        error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
+    end
+
+    local session = Onnx.create_session(model_path)
+    if not session or not session.session then
+        print_log("Failed to create ONNX session")
+        error((session and tostring(session.message)) or "Failed to create ONNX session")
+    end
+    print_log(session.message)
+
+    local image_data = love.image.newImageData(image_path)
+
+    return Onnx, session, image_data
+end
+
 
 -- Worker thread function 1: Remove background
 --- @param step number # current iteration number
@@ -48,19 +73,7 @@ local function worker1_onnx_remove_background(step, command)
         send_status("remove_background_start") -- hardcoded
 
         local ok, filedata = xpcall(function()
-            local Onnx = require("onnx")
-            local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
-            if not onnx_api then
-                error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
-            end
-
-            local session = Onnx.create_session(model_path)
-            if not session or not session.session then
-                error((session and tostring(session.message)) or "Failed to create ONNX session")
-            end
-            print_log(session.message)
-
-            local image_data = love.image.newImageData(image_path)
+            local Onnx, session, image_data = onnx_init_and_create_session(model_path, image_path)
             local output_image_data = Onnx.remove_background(session, image_data, alpha_threshold, true)
             return output_image_data:encode("tga", nil)
         end, debug.traceback)
@@ -106,19 +119,7 @@ local function worker2_onnx_upscale(step, command)
         send_status("upscale_start") -- hardcoded
 
         local ok, filedata = xpcall(function()
-            local Onnx = require("onnx")
-            local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
-            if not onnx_api then
-                error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
-            end
-
-            local session = Onnx.create_session(model_path)
-            if not session or not session.session then
-                error((session and tostring(session.message)) or "Failed to create ONNX session")
-            end
-            print_log(session.message)
-
-            local image_data = love.image.newImageData(image_path)
+            local Onnx, session, image_data = onnx_init_and_create_session(model_path, image_path)
             local output_image_data = Onnx.upscale(session, image_data, true, tile_size, tile_overlap)
             return output_image_data:encode("tga", nil)
         end, debug.traceback)
@@ -163,19 +164,7 @@ local function worker3_onnx_inpaint(step, command)
         send_status("inpaint_start") -- hardcoded
 
         local ok, filedata = xpcall(function()
-            local Onnx = require("onnx")
-            local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
-            if not onnx_api then
-                error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
-            end
-
-            local session = Onnx.create_session(model_path)
-            if not session or not session.session then
-                error((session and tostring(session.message)) or "Failed to create ONNX session")
-            end
-            print_log(session.message)
-
-            local image_data = love.image.newImageData(image_path)
+            local Onnx, session, image_data = onnx_init_and_create_session(model_path, image_path)
             local output_image_data = Onnx.inpaint(session, image_data, alpha_threshold, true)
             return output_image_data:encode("tga", nil)
         end, debug.traceback)
@@ -220,19 +209,7 @@ local function worker4_onnx_colorize(step, command)
         send_status("colorize_start") -- hardcoded
 
         local ok, filedata = xpcall(function()
-            local Onnx = require("onnx")
-            local onnx_api, init_state = Onnx.init("onnxruntime/onnxruntime")
-            if not onnx_api then
-                error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
-            end
-
-            local session = Onnx.create_session(model_path)
-            if not session or not session.session then
-                error((session and tostring(session.message)) or "Failed to create ONNX session")
-            end
-            print_log(session.message)
-
-            local image_data = love.image.newImageData(image_path)
+            local Onnx, session, image_data = onnx_init_and_create_session(model_path, image_path)
             local output_image_data = Onnx.colorize(session, image_data, true, model_type)
             return output_image_data:encode("tga", nil)
         end, debug.traceback)
@@ -303,7 +280,18 @@ while is_running do
         love.timer.sleep(0.1)
     else
         step = step + 1
-        active_function(step, last_command)
+        local ok, err = xpcall(
+            function()
+                return active_function(step, last_command)
+            end,
+            debug.traceback
+        )
+        if not ok then
+            print("Worker raised error: " .. tostring(err))
+            print_log("Worker raised error: " .. tostring(err))
+            send_status("crashed:" .. tostring(err))
+            return
+        end
     end
 end
 
