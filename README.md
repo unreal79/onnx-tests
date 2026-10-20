@@ -13,7 +13,7 @@ This project demonstrates the use of ONNX models for inpainting, upscaling, and 
 
 Note the following:
 
-- **CPU and GPU (DirectML)**: The project currently supports running ONNX models on CPU, and GPU acceleration through DirectML (it's multiplatform).
+- **CPU and GPU (DirectML)**: The project currently supports running ONNX models on CPU, and GPU acceleration through DirectML (Windows 10+ only).
 - **Threading**: The project uses threading to run ONNX models in background threads, improving performance and responsiveness.
 - **FFI**: The project uses LuaJIT's FFI to interface with the ONNX Runtime C API (`onnxruntime.dll`). No additional bindings are required.
 
