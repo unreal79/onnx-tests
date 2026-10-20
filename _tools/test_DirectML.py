@@ -1,3 +1,5 @@
+# Simple test script for running ONNX models with DirectML provider using ONNX Runtime
+
 import time
 import os
 from pathlib import Path

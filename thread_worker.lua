@@ -28,6 +28,7 @@ local function send_status(message)
     status_channel:push(message)
 end
 
+
 --- Helper function to initialize ONNX Runtime
 --- @param model_path string # path to the ONNX model file
 local function onnx_init_and_create_session(model_path, image_path)
