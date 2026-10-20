@@ -7,11 +7,13 @@ This project demonstrates the use of ONNX models for inpainting, upscaling, and 
 - **Inpainting**: Modify parts of an image using ONNX inpainting models (fill "holes" in the image).
 - **Upscaling**: Enhance image resolution using ONNX upscaling models.
 - **Background Removal**: Automatically remove image backgrounds using ONNX models.
+- **Colorization**: Automatically add colors to black and white images.
+- **Many samples**: I've ran many ONNX model and created samples of their output (and benchmarked their run-time). Also I've collected lists of URLs to download the models.
 - **Camera Management**: Manage camera views with mouse wheel and drag.
 
 Note the following:
 
-- **CPU only**: The project currently supports running ONNX models on the CPU only, without GPU acceleration.
+- **CPU and GPU (DirectML)**: The project currently supports running ONNX models on CPU, and GPU acceleration through DirectML.
 - **Threading**: The project uses threading to run ONNX models in background threads, improving performance and responsiveness.
 - **FFI**: The project uses LuaJIT's FFI to interface with the ONNX Runtime C API (`onnxruntime.dll`). No additional bindings are required.
 
