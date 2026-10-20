@@ -8,8 +8,10 @@ require("love.image")
 require("love.font")
 require("love.system")
 require("utils")
+require("onnx")
 
 local ONNXRUNTIME_PATH = "onnxruntime/onnxruntime"
+USE_DIRECTML = false
 
 local control_channel = love.thread.getChannel("threading_control_" .. worker_id)
 local status_channel = love.thread.getChannel("threading_status_" .. worker_id)
@@ -30,15 +32,20 @@ end
 --- @param model_path string # path to the ONNX model file
 local function onnx_init_and_create_session(model_path, image_path)
     local Onnx = require("onnx")
-    local onnx_api, init_state = Onnx.init(ONNXRUNTIME_PATH)
+    local ok, err = pcall(function() return Onnx.init(ONNXRUNTIME_PATH) end)
+    local onnx_api, init_state = ok and err or nil, ok and not err and {} or {load_error = err}
     if not onnx_api then
         print_log("Failed to initialize ONNX Runtime")
+        send_status("crashed: " .. tostring(init_state and init_state.load_error or "unknown error"))
         error((init_state and init_state.load_error) or "Failed to initialize ONNX Runtime")
     end
 
-    local session = Onnx.create_session(model_path)
+    print_log("Using model: `" .. model_path .. "`")
+    ok, err = pcall(function() return Onnx.create_session(model_path) end)
+    local session = ok and err or nil
     if not session or not session.session then
         print_log("Failed to create ONNX session")
+        send_status("crashed: " .. tostring(session and session.message or "unknown error"))
         error((session and tostring(session.message)) or "Failed to create ONNX session")
     end
     print_log(session.message)
@@ -69,6 +76,11 @@ local function worker1_onnx_remove_background(step, command)
         local model_path = commands[2]
         local image_path = commands[3]
         local alpha_threshold = tonumber(commands[4])
+        USE_DIRECTML = commands[5] == "true"
+        if USE_DIRECTML then
+            ONNXRUNTIME_PATH = "onnxruntime/DirectML/onnxruntime"
+        end
+
 
         send_status("remove_background_start") -- hardcoded
 
@@ -115,6 +127,10 @@ local function worker2_onnx_upscale(step, command)
         local image_path = commands[3]
         local tile_size = tonumber(commands[4])
         local tile_overlap = tonumber(commands[5])
+        USE_DIRECTML = commands[6] == "true"
+        if USE_DIRECTML then
+            ONNXRUNTIME_PATH = "onnxruntime/DirectML/onnxruntime"
+        end
 
         send_status("upscale_start") -- hardcoded
 
@@ -160,6 +176,10 @@ local function worker3_onnx_inpaint(step, command)
         local model_path = commands[2]
         local image_path = commands[3]
         local alpha_threshold = tonumber(commands[4])
+        USE_DIRECTML = commands[5] == "true"
+        if USE_DIRECTML then
+            ONNXRUNTIME_PATH = "onnxruntime/DirectML/onnxruntime"
+        end
 
         send_status("inpaint_start") -- hardcoded
 
@@ -205,6 +225,10 @@ local function worker4_onnx_colorize(step, command)
         local model_path = commands[2]
         local image_path = commands[3]
         local model_type = commands[4] or "colorize"
+        USE_DIRECTML = commands[5] == "true"
+        if USE_DIRECTML then
+            ONNXRUNTIME_PATH = "onnxruntime/DirectML/onnxruntime"
+        end
 
         send_status("colorize_start") -- hardcoded
 

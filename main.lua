@@ -1,7 +1,8 @@
 -- main.lua
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
-local WORKING_MODE = "background_removal"
+local WORKING_MODE = "upscaling"
+USE_DIRECTML = true -- Set to false to use CPU instead of GPU
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
@@ -13,28 +14,28 @@ local IMAGE_BW_PATH = "assets/eiffel_bw_small.png" -- Input image in black and w
 ---- Models. Uncomment the one you want to use for upscaling.
 local UPSCALER_TILE_SIZE = 256
 local UPSCALER_TILE_OVERLAP = 32
-local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED
+local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED, DirectML: 3 sec
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Archivist_Soft.onnx" -- 7 sec, bad, eats details
--- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good
+-- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good, DirectML: 5 sec
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Restoration-jpg-ESRGAN_64nf_23nb-jpg40_60-vyls.onnx" -- 200 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xNomos2_realplksr_dysample_256_fp32_fullyoptimized.onnx" -- 200 sec, x8, very bad
--- local MODEL_UPSCALER_PATH = "models/upscale/4xNomosWebPhoto_RealPLKSR.onnx" -- 110 sec, x4, ADVANCED, sharp
--- local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx" -- 8 sec, x4, ADVANCED
--- local MODEL_UPSCALER_PATH = "models/upscale/4x-UltraSharp-fp32-opset17.onnx" -- 220 sec, x4, ADVANCED, sharp
--- local MODEL_UPSCALER_PATH = "models/upscale/4x-UltraSharpV2_Lite_fp32_op17.onnx" -- 110 sec, x4, ADVANCED, creates halo inside
--- local MODEL_UPSCALER_PATH = "models/upscale/1x-SuperScale_Alt_RPLKSR_S.onnx" -- 40 sec, x1, average
--- local MODEL_UPSCALER_PATH = "models/upscale/4x_foolhardy_Remacri.onnx" -- 220 sec, x4, average, too sharp
--- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-RealPLSKR.onnx" -- 118 sec, x4, slow, bad, tile visible
--- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-Span.onnx" -- 8 sec, x4, very good, darkens image
+-- local MODEL_UPSCALER_PATH = "models/upscale/4xNomosWebPhoto_RealPLKSR.onnx" -- 110 sec, x4, ADVANCED, sharp, DirectML: 115 sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1-fp32-opset17.onnx" -- 8 sec, x4, ADVANCED, DirectML: 3 sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/4x-UltraSharp-fp32-opset17.onnx" -- 220 sec, x4, ADVANCED, sharp, DirectML: 21 sec!!!
+-- local MODEL_UPSCALER_PATH = "models/upscale/4x-UltraSharpV2_Lite_fp32_op17.onnx" -- 110 sec, x4, ADVANCED, creates halo inside, DirectML: 115 sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/1x-SuperScale_Alt_RPLKSR_S.onnx" -- 40 sec, x1, average, DirectML: 33 sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/4x_foolhardy_Remacri.onnx" -- 220 sec, x4, average, too sharp, DirectML: 20 sec!!!
+-- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-RealPLSKR.onnx" -- 118 sec, x4, bad, tile visible, DirectML: 120 sec
+-- local MODEL_UPSCALER_PATH = "models/upscale/4xPurePhoto-Span.onnx" -- 8 sec, x4, very good, darkens image, DirectML: 3 sec
 -- local MODEL_UPSCALER_PATH = "models/upscale/4xLSDIRCompactv2.onnx" -- 8 sec, x4, average
 -- local MODEL_UPSCALER_PATH = "models/upscale/ArtCNN_R8F64_RGB.onnx" -- 12 sec, x2, average
 -- local MODEL_UPSCALER_PATH = "models/upscale/hdrtvnetpp_ensemble_dynamic.onnx" -- 4 sec, x1, bad, output in BT.2020 color
--- local MODEL_UPSCALER_PATH = "models/upscale/BSRGAN.onnx" -- 235 sec, x4, good, fixes JPEG halo
--- local MODEL_UPSCALER_PATH = "models/upscale/BSRGANx2.onnx" -- 230 sec, x2, good, fixes JPEG halo
--- local MODEL_UPSCALER_PATH = "models/upscale/BSRNet.onnx" -- 230 sec, x4, good, fixes JPEG halo
+-- local MODEL_UPSCALER_PATH = "models/upscale/BSRGAN.onnx" -- 235 sec, x4, good, fixes JPEG halo, DirectML: 20 sec!!!
+-- local MODEL_UPSCALER_PATH = "models/upscale/BSRGANx2.onnx" -- 230 sec, x2, good, fixes JPEG halo, DirectML: 19 sec!!!
+-- local MODEL_UPSCALER_PATH = "models/upscale/BSRNet.onnx" -- 230 sec, x4, good, fixes JPEG halo, DirectML: 21 sec!!!
 -- local MODEL_UPSCALER_PATH = "models/upscale/realesr-general-wdn-x4v3.onnx" -- 15 sec, x4, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/up4x_latest_conservative.onnx" -- 20 sec, x4, average
--- local MODEL_UPSCALER_PATH = "models/upscale/upscayl-remacri-4x.onnx" -- 230 sec, x4, average, too sharp
+-- local MODEL_UPSCALER_PATH = "models/upscale/upscayl-remacri-4x.onnx" -- 230 sec, x4, average, too sharp, DirectML: 20 sec!!!
 -- local MODEL_UPSCALER_PATH = "models/upscale/upscale-realplksr-onnx_x4.onnx" -- 190 sec, x8, very bad
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_noise0.onnx" -- 4 sec, x1, very good
 -- local MODEL_UPSCALER_PATH = "models/upscale/waifu2x_vgg7_photo_noise3.onnx" -- 4 sec, x1, very good
@@ -42,7 +43,7 @@ local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4
 -- local MODEL_UPSCALER_PATH = "models/upscale/websr_cnn2x_l_rl.onnx" -- 2 sec, x2, average, adds JPEG halo
 
 local MODEL_COLORIZER_TYPE = "ddcolor" -- possible values: "ddcolor", "deoldify", "colorize"
-local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-512-fp16.onnx" -- 11/16 sec, very good, average RAM hungry
+local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-512-fp16.onnx" -- 11/16 sec, very good, average RAM hungry, DirectML wrong colorizing
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_modelscope.onnx" -- 17/19 sec, very good, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_artistic.onnx" -- 17/25 sec, good, but very small bugs, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor_paper_tiny.onnx" -- 6/6 sec, ok, but small bugs
@@ -55,18 +56,18 @@ local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-512-fp16.onnx" -- 11/16 se
 -- local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-tiny-fp16.onnx" -- 7/9 sec, ok, but small bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/photorestore-ddcolor.onnx" -- 7/7 sec, ok, but small bugs
 -- local MODEL_COLORIZER_PATH = "models/colorize/ptl1998naganodevall-ddcolor.onnx" -- 3/4 sec, ok, but small bugs
--- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 26/97 sec, average RAM hungry
+-- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyArtistic_dyn.onnx" -- 26/97 sec, average RAM hungry, DirectML: 20/VRAM sec
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeOldifyStable_dyn.onnx" -- 33/155 sec, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/DeoldifyVideo_dyn.onnx" -- 32/81 sec, RAM hungry
 -- local MODEL_COLORIZER_PATH = "models/colorize/deoldify_quantized.onnx" -- 4/8 sec, bad, many bugs everywhere
 -- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 20/48 sec, bad, low resolution
 
 local BACKGROUND_REMOVAL_THRESHOLD = 0.25
-local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, average RAM hungry
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, RAM hungry
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, above average RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 40 sec, average RAM hungry, DirectML: 20 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 50 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite_fp16.onnx" -- 70 sec, very RAM hungry
-local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/fey-nobg_fp16.onnx" -- 80 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/lucida.onnx" -- 65 sec, very RAM hungry
@@ -81,11 +82,11 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/isnet-general-use.onnx" -- 2 sec, need code changed
 
 local INPAINTER_ALPHA_THRESHOLD = 0.001
-local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec
--- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec
--- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 10 sec
+local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec, not DirectML compatible
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec, not DirectML compatible
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 10 sec, not DirectML compatible
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama-manga-dynamic.onnx" -- 25 sec
--- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_js.onnx" -- 10 sec
+-- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32_js.onnx" -- 10 sec, not DirectML compatible
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_1024.onnx" -- 58 sec
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_2048.onnx" -- 250 sec, very RAM hungry
 
@@ -101,7 +102,7 @@ local SCREEN_FILTER_MODES = {
 local THREAD_WORKER_PATH = "thread_worker.lua"
 
 io.popen("chcp 65001") -- set console code page to UTF-8
-local SYSTEM_CODE_PAGE = 1251
+SYSTEM_CODE_PAGE = 1251
 
 require("libs.errorhandler")
 utf8 = require("utf8")
@@ -175,8 +176,8 @@ local function start_background_removal()
         return
     end
 
-    local command = string.format("remove_background|%s|%s|%s", MODEL_BG_REMOVER_PATH, IMAGE_PATH,
-            tostring(BACKGROUND_REMOVAL_THRESHOLD))
+    local command = string.format("remove_background|%s|%s|%s|%s", MODEL_BG_REMOVER_PATH, IMAGE_PATH,
+            tostring(BACKGROUND_REMOVAL_THRESHOLD), tostring(USE_DIRECTML))
     ok, err = Threading.command(1, command)
     if not ok then
         print_log("Failed to queue background removal: " .. tostring(err))
@@ -200,8 +201,8 @@ local function start_upscale()
         return
     end
 
-    local command = string.format("upscale|%s|%s|%s|%s", MODEL_UPSCALER_PATH, IMAGE_PATH,
-            tostring(UPSCALER_TILE_SIZE), tostring(UPSCALER_TILE_OVERLAP))
+    local command = string.format("upscale|%s|%s|%s|%s|%s", MODEL_UPSCALER_PATH, IMAGE_PATH,
+            tostring(UPSCALER_TILE_SIZE), tostring(UPSCALER_TILE_OVERLAP), tostring(USE_DIRECTML))
     ok, err = Threading.command(2, command)
     if not ok then
         print_log("Failed to queue upscale: " .. tostring(err))
@@ -226,8 +227,8 @@ local function start_inpaint()
         return
     end
 
-    local command = string.format("inpaint|%s|%s|%s", MODEL_INPAINTER_PATH, IMAGE_WITH_HOLES_PATH,
-            tostring(INPAINTER_ALPHA_THRESHOLD))
+    local command = string.format("inpaint|%s|%s|%s|%s", MODEL_INPAINTER_PATH, IMAGE_WITH_HOLES_PATH,
+            tostring(INPAINTER_ALPHA_THRESHOLD), tostring(USE_DIRECTML))
     ok, err = Threading.command(3, command)
     if not ok then
         print_log("Failed to queue inpaint: " .. tostring(err))
@@ -252,8 +253,8 @@ local function start_colorizing()
         return
     end
 
-    local command = string.format("colorize|%s|%s|%s", MODEL_COLORIZER_PATH, IMAGE_BW_PATH,
-        MODEL_COLORIZER_TYPE)
+    local command = string.format("colorize|%s|%s|%s|%s", MODEL_COLORIZER_PATH, IMAGE_BW_PATH,
+        MODEL_COLORIZER_TYPE, tostring(USE_DIRECTML))
     ok, err = Threading.command(4, command)
     if not ok then
         print_log("Failed to queue colorizing: " .. tostring(err))

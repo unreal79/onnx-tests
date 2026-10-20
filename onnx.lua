@@ -206,9 +206,12 @@ ffi.cdef([[
     };
 
     const OrtApiBase* __stdcall OrtGetApiBase(void);
+
+    OrtStatus* __stdcall OrtSessionOptionsAppendExecutionProvider_DML(OrtSessionOptions* options, int device_id);
+    OrtStatus* __stdcall OrtSessionOptionsAppendExecutionProvider_CPU(OrtSessionOptions* options, int device_id);
 ]])
 
-local ORT_API_VERSION = 18 -- compatible with ONNX Runtime 1.14+
+local ORT_API_VERSION = 24 -- compatible with ONNX Runtime 1.24+
 local ORT_LOGGING_LEVEL_WARNING = 2
 local ORT_ARENA_ALLOCATOR = 1
 local ORT_MEM_TYPE_DEFAULT = 0
@@ -236,13 +239,13 @@ local State = {
 --- @param action string # Human-readable description of the call that failed.
 --- @return nil # Returns nothing when the status indicates success.
 local function check(status, action)
-    if status == nil or status == NULL then
-        return
-    end
+    if status == nil or status == NULL then return end
 
     local err_code = tonumber(State.api.GetErrorCode(status)) or -1
     local err_ptr = State.api.GetErrorMessage(status)
     local err_msg = err_ptr ~= nil and ffi.string(err_ptr) or "Unknown ONNX Runtime error"
+    err_msg = codepage2codepage(err_msg, 1251, 65001)
+    print_log(string.format("ONNX Runtime error (code %d): %s", err_code, err_msg))
     error(string.format("ONNX Runtime %s failed (code %d): %s", action, err_code, err_msg), 2)
 end
 
@@ -337,12 +340,33 @@ function Onnx.create_session(model_path)
     -- setting session options
     local options_out = ffi.new("OrtSessionOptions*[1]")
     check(api.CreateSessionOptions(options_out), "CreateSessionOptions")
+
     check(api.DisableProfiling(options_out[0]), "DisableProfiling")
-    check(api.SetSessionGraphOptimizationLevel(options_out[0], 1),
-        "SetSessionGraphOptimizationLevel") -- sets the graph optimization level to basic=1
-    -- check(api.DisableMemPattern(options_out[0]), "DisableMemPattern") -- ?
-    -- check(api.EnableMemPattern(options_out[0]), "EnableMemPattern")
     check(api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
+
+    if USE_DIRECTML then
+        print_log("Using DirectML as the execution provider")
+        check(api.SetSessionExecutionMode(options_out[0], 1), "SetSessionExecutionMode") -- sequential mode
+        check(api.DisableMemPattern(options_out[0]), "DisableMemPattern") -- required for GPU ?
+
+        local ok, err = pcall(function()
+            return check(State.ort.OrtSessionOptionsAppendExecutionProvider_DML(options_out[0], 0),
+                "OrtSessionOptionsAppendExecutionProvider_DML")
+        end)
+        if not ok then
+            err = codepage2codepage(err, 1251, 65001)
+            print_log("Failed to append DirectML execution provider: " .. tostring(err))
+            error(err, 2)
+        end
+    else
+        print_log("Using CPU as the execution provider")
+        -- check(api.EnableMemPattern(options_out[0]), "EnableMemPattern")
+        -- check(State.ort.OrtSessionOptionsAppendExecutionProvider_CPU(options_out[0], 0),
+        --     "OrtSessionOptionsAppendExecutionProvider_CPU")
+        check(api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
+        check(api.SetSessionGraphOptimizationLevel(options_out[0], 1),
+            "SetSessionGraphOptimizationLevel") -- sets the graph optimization level to basic=1
+    end
 
     local session_out = ffi.new("OrtSession*[1]")
     local wide_model_path = utf8_to_wide(model_path)
