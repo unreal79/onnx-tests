@@ -3,8 +3,7 @@ onnxruntime/**
 !onnxruntime/.gitkeep
 _INFO/
 _scripts/
-_obfuscated/
-_web_build/
+_release/
 _makelove-build/
 __pycache__/
 *.pyc

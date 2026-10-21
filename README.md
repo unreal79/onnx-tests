@@ -19,14 +19,17 @@ Note the following:
 
 ## Examples
 
-Inpainting example (took 25 seconds on my CPU):
-![inpainting_lama_2025jan](./_output/inpaint/inpainting_lama_2025jan.webp)
+Upscaling example (x4, took 8 seconds on my CPU):
 
-Upscaling example (x4, took 8 sec):
 ![4x-ClearRealityV1](./_output/upscale/4x-ClearRealityV1.webp)
 
 Background removal example (took 15 sec):
+
 ![birefnet-lite-512](./_output/bg_remove/birefnet-lite-512.webp)
+
+Inpainting example (took 25 sec):
+
+![inpainting_lama_2025jan](./_output/inpaint/inpainting_lama_2025jan.webp)
 
 There are more than 110 example images located in the `_output` folder.
 
