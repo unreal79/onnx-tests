@@ -2,16 +2,22 @@ https://huggingface.co/notaneimu/onnx-image-models/tree/main:
 1x-Archivist_Soft.onnx
 1x-Kim2091-DeJpeg-v0.onnx
 1x-Restoration-jpg-ESRGAN_64nf_23nb-jpg40_60-vyls.onnx
+1x-SuperScale_Alt_RPLKSR_S.onnx
 4x-ClearRealityV1.onnx
 4x_foolhardy_Remacri.onnx
 4xPurePhoto-RealPLSKR.onnx
 4xPurePhoto-Span.onnx
-realesr-general-wdn-x4v3.onnx
+4xNomos2_hq_mosr_fp32.onnx
 4xNomos2_realplksr_dysample_256_fp32_fullyoptimized.onnx
 4xNomosWebPhoto_RealPLKSR.onnx
-1x-SuperScale_Alt_RPLKSR_S.onnx
-upscayl-remacri-4x.onnx
+4xNomosWebPhoto_esrgan_fp32_opset17.onnx
+4x_NMKD-Siax_200k.onnx
 4xLSDIRCompactv2.onnx
+4x-UniScale_Restore.onnx
+4x-UniScaleV2_Sharp.onnx
+RealESRGAN_x4plus.onnx
+realesr-general-wdn-x4v3.onnx
+upscayl-remacri-4x.onnx
 
 
 from onnx_models_20260808_main.zip: https://github.com/rigaya/HWEnc-onnx-models:
