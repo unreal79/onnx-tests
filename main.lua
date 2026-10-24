@@ -2,7 +2,7 @@
 
 ---- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
 local WORKING_MODE = "upscaling"
-USE_DIRECTML = true -- Set to false to use CPU instead of GPU
+local ONNXRUNTIME_PROVIDER = "DirectML" -- Options: "DirectML" == "WebGPU" (GPU) or "" (CPU)
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
 local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with transparent "holes" for inpainting
@@ -74,8 +74,12 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 se
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 27 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite_.onnx" -- 25 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite_fp16.onnx" -- 28 sec, very RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/silueta_320.onnx" -- 3 sec
+local MODEL_BG_REMOVER_PATH = "models/bg_remove/silueta-fp32.onnx" -- 3 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2net.onnx" -- 4 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/u2netp.onnx" -- 1 sec
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/InSPyReNet.onnx" -- 19 sec, above average RAM hungry
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/InSPyReNet_fp16.onnx" -- 27 sec, above average RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/fey-nobg_fp16.onnx" -- 68 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/lucida.onnx" -- 58 sec, very RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/RMBG-2.0_fp16.onnx" -- 49 sec, very RAM hungry
@@ -86,9 +90,11 @@ local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 se
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg-1-4_quantized.onnx" -- 5 sec, very bad result
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/rmbg.onnx" -- 5 sec, very bad result
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/quitar_fondo_v2.onnx" -- 31 sec, very RAM hungry
--- local MODEL_BG_REMOVER_PATH = "models/bg_remove/isnet-general-use.onnx" -- 2 sec, broken - need code changed
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/withoutbg-open-weights.onnx" -- broken - need code rewriting
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/withoutbg-open-weights-backbone.onnx" -- broken - need code rewriting
+-- local MODEL_BG_REMOVER_PATH = "models/bg_remove/isnet-general-use.onnx" -- 2 sec, broken - need code rewriting
 
-local INPAINTER_ALPHA_THRESHOLD = 0.001
+local INPAINTER_ALPHA_THRESHOLD = 0.001 -- user mask threshold: everithing above it will be considered for inpainting
 local MODEL_INPAINTER_PATH = "models/inpaint/inpainting_lama_2025jan.onnx" -- 25 sec, not DirectML compatible
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp32.onnx" -- 29 sec, not DirectML compatible
 -- local MODEL_INPAINTER_PATH = "models/inpaint/lama_fp16.onnx" -- 10 sec, not DirectML compatible
@@ -184,7 +190,7 @@ local function start_background_removal()
     end
 
     local command = string.format("remove_background|%s|%s|%s|%s", MODEL_BG_REMOVER_PATH, IMAGE_PATH,
-            tostring(BACKGROUND_REMOVAL_THRESHOLD), tostring(USE_DIRECTML))
+            tostring(BACKGROUND_REMOVAL_THRESHOLD), ONNXRUNTIME_PROVIDER)
     ok, err = Threading.command(1, command)
     if not ok then
         print_log("Failed to queue background removal: " .. tostring(err))
@@ -209,7 +215,7 @@ local function start_upscale()
     end
 
     local command = string.format("upscale|%s|%s|%s|%s|%s", MODEL_UPSCALER_PATH, IMAGE_PATH,
-            tostring(UPSCALER_TILE_SIZE), tostring(UPSCALER_TILE_OVERLAP), tostring(USE_DIRECTML))
+            tostring(UPSCALER_TILE_SIZE), tostring(UPSCALER_TILE_OVERLAP), ONNXRUNTIME_PROVIDER)
     ok, err = Threading.command(2, command)
     if not ok then
         print_log("Failed to queue upscale: " .. tostring(err))
@@ -235,7 +241,7 @@ local function start_inpaint()
     end
 
     local command = string.format("inpaint|%s|%s|%s|%s", MODEL_INPAINTER_PATH, IMAGE_WITH_HOLES_PATH,
-            tostring(INPAINTER_ALPHA_THRESHOLD), tostring(USE_DIRECTML))
+            tostring(INPAINTER_ALPHA_THRESHOLD), ONNXRUNTIME_PROVIDER)
     ok, err = Threading.command(3, command)
     if not ok then
         print_log("Failed to queue inpaint: " .. tostring(err))
@@ -261,7 +267,7 @@ local function start_colorizing()
     end
 
     local command = string.format("colorize|%s|%s|%s|%s", MODEL_COLORIZER_PATH, IMAGE_BW_PATH,
-        MODEL_COLORIZER_TYPE, tostring(USE_DIRECTML))
+        MODEL_COLORIZER_TYPE, ONNXRUNTIME_PROVIDER)
     ok, err = Threading.command(4, command)
     if not ok then
         print_log("Failed to queue colorizing: " .. tostring(err))

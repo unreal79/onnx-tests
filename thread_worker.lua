@@ -11,7 +11,10 @@ require("utils")
 require("onnx")
 
 local ONNXRUNTIME_PATH = "onnxruntime/onnxruntime"
+local ONNXRUNTIME_DIRECTML_PATH = "onnxruntime/DirectML/onnxruntime"
+local ONNXRUNTIME_WEBGPU_PATH = "onnxruntime/DirectML/onnxruntime"
 USE_DIRECTML = false
+USE_WEBGPU = false
 
 local control_channel = love.thread.getChannel("threading_control_" .. worker_id)
 local status_channel = love.thread.getChannel("threading_status_" .. worker_id)
@@ -77,9 +80,12 @@ local function worker1_onnx_remove_background(step, command)
         local model_path = commands[2]
         local image_path = commands[3]
         local alpha_threshold = tonumber(commands[4])
-        USE_DIRECTML = commands[5] == "true"
+        USE_DIRECTML = commands[5] == "DirectML"
+        USE_WEBGPU = commands[5] == "WebGPU"
         if USE_DIRECTML then
-            ONNXRUNTIME_PATH = "onnxruntime/DirectML/onnxruntime"
+            ONNXRUNTIME_PATH = ONNXRUNTIME_DIRECTML_PATH
+        elseif USE_WEBGPU then
+            ONNXRUNTIME_PATH = ONNXRUNTIME_WEBGPU_PATH
         end
 
 
@@ -128,9 +134,12 @@ local function worker2_onnx_upscale(step, command)
         local image_path = commands[3]
         local tile_size = tonumber(commands[4])
         local tile_overlap = tonumber(commands[5])
-        USE_DIRECTML = commands[6] == "true"
+        USE_DIRECTML = commands[6] == "DirectML"
+        USE_WEBGPU = commands[6] == "WebGPU"
         if USE_DIRECTML then
-            ONNXRUNTIME_PATH = "onnxruntime/DirectML/onnxruntime"
+            ONNXRUNTIME_PATH = ONNXRUNTIME_DIRECTML_PATH
+        elseif USE_WEBGPU then
+            ONNXRUNTIME_PATH = ONNXRUNTIME_WEBGPU_PATH
         end
 
         send_status("upscale_start") -- hardcoded
@@ -177,9 +186,12 @@ local function worker3_onnx_inpaint(step, command)
         local model_path = commands[2]
         local image_path = commands[3]
         local alpha_threshold = tonumber(commands[4])
-        USE_DIRECTML = commands[5] == "true"
+        USE_DIRECTML = commands[5] == "DirectML"
+        USE_WEBGPU = commands[5] == "WebGPU"
         if USE_DIRECTML then
-            ONNXRUNTIME_PATH = "onnxruntime/DirectML/onnxruntime"
+            ONNXRUNTIME_PATH = ONNXRUNTIME_DIRECTML_PATH
+        elseif USE_WEBGPU then
+            ONNXRUNTIME_PATH = ONNXRUNTIME_WEBGPU_PATH
         end
 
         send_status("inpaint_start") -- hardcoded
@@ -226,9 +238,12 @@ local function worker4_onnx_colorize(step, command)
         local model_path = commands[2]
         local image_path = commands[3]
         local model_type = commands[4] or "colorize"
-        USE_DIRECTML = commands[5] == "true"
+        USE_DIRECTML = commands[5] == "DirectML"
+        USE_WEBGPU = commands[5] == "WebGPU"
         if USE_DIRECTML then
-            ONNXRUNTIME_PATH = "onnxruntime/DirectML/onnxruntime"
+            ONNXRUNTIME_PATH = ONNXRUNTIME_DIRECTML_PATH
+        elseif USE_WEBGPU then
+            ONNXRUNTIME_PATH = ONNXRUNTIME_WEBGPU_PATH
         end
 
         send_status("colorize_start") -- hardcoded

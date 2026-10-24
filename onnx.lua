@@ -4,214 +4,7 @@
 require("utils")
 local ffi = require("ffi")
 
-ffi.cdef([[
-    typedef struct OrtEnv OrtEnv;
-    typedef struct OrtSession OrtSession;
-    typedef struct OrtSessionOptions OrtSessionOptions;
-    typedef struct OrtRunOptions OrtRunOptions;
-    typedef struct OrtStatus OrtStatus;
-    typedef struct OrtAllocator OrtAllocator;
-    typedef struct OrtMemoryInfo OrtMemoryInfo;
-    typedef struct OrtValue OrtValue;
-    typedef struct OrtTypeInfo OrtTypeInfo;
-    typedef struct OrtTensorTypeAndShapeInfo OrtTensorTypeAndShapeInfo;
-    typedef struct OrtCustomOpDomain OrtCustomOpDomain;
-    typedef struct OrtCustomOp OrtCustomOp;
-    typedef int32_t OrtErrorCode;
-    typedef wchar_t ORTCHAR_T;
-
-    typedef enum OrtLoggingLevel {
-        ORT_LOGGING_LEVEL_VERBOSE = 0,
-        ORT_LOGGING_LEVEL_INFO = 1,
-        ORT_LOGGING_LEVEL_WARNING = 2,
-        ORT_LOGGING_LEVEL_ERROR = 3,
-        ORT_LOGGING_LEVEL_FATAL = 4
-    } OrtLoggingLevel;
-
-    typedef enum OrtAllocatorType {
-        ORT_ALLOCATOR_INVALID = 0,
-        ORT_ARENA_ALLOCATOR = 1,
-        ORT_HUGEPAGES_ALLOCATOR = 2,
-        ORT_DEVICE_ALLOCATOR = 3,
-        ORT_PINNED_ALLOCATOR = 4
-    } OrtAllocatorType;
-
-    typedef enum OrtMemType {
-        OrtMemTypeDefault = 0,
-        OrtMemTypeCPU = -1,
-        OrtMemTypeCPUOutput = -1
-    } OrtMemType;
-
-    typedef enum GraphOptimizationLevel {
-        ORT_DISABLE_ALL = 0,
-        ORT_ENABLE_BASIC = 1,
-        ORT_ENABLE_EXTENDED = 2,
-        ORT_ENABLE_LAYOUT = 3,
-        ORT_ENABLE_ALL = 99
-    } GraphOptimizationLevel;
-
-    typedef enum ONNXTensorElementDataType {
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED = 0,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT = 1,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8 = 2,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8 = 3,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16 = 4,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16 = 5,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32 = 6,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64 = 7,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING = 8,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL = 9,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 = 10,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE = 11,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32 = 12,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64 = 13,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64 = 14,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128 = 15,
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16 = 16
-    } ONNXTensorElementDataType;
-
-    typedef struct OrtApi OrtApi;
-
-    typedef struct OrtApiBase {
-        const OrtApi* (__stdcall *GetApi)(uint32_t version);
-        const char* (__stdcall *GetVersionString)(void);
-    } OrtApiBase;
-
-    struct OrtApi {
-        OrtStatus* (__stdcall *CreateStatus)(OrtErrorCode code, const char* msg);
-        OrtErrorCode (__stdcall *GetErrorCode)(const OrtStatus* status);
-        const char* (__stdcall *GetErrorMessage)(const OrtStatus* status);
-        OrtStatus* (__stdcall *CreateEnv)(OrtLoggingLevel log_severity_level, const char* logid,
-            OrtEnv** out);
-        OrtStatus* (__stdcall *CreateEnvWithCustomLogger)(void* logging_function,
-            void* logger_param, OrtLoggingLevel log_severity_level, const char* logid,
-            OrtEnv** out);
-        OrtStatus* (__stdcall *EnableTelemetryEvents)(const OrtEnv* env);
-        OrtStatus* (__stdcall *DisableTelemetryEvents)(const OrtEnv* env);
-        OrtStatus* (__stdcall *CreateSession)(const OrtEnv* env, const wchar_t* model_path,
-            const OrtSessionOptions* options, OrtSession** out);
-        OrtStatus* (__stdcall *CreateSessionFromArray)(const OrtEnv* env,
-            const void* model_data, size_t model_data_length,
-            const OrtSessionOptions* options, OrtSession** out);
-        OrtStatus* (__stdcall *Run)(OrtSession* session, const OrtRunOptions* run_options,
-            const char* const* input_names, const OrtValue* const* inputs, size_t input_len,
-            const char* const* output_names, size_t output_names_len, OrtValue** outputs);
-        OrtStatus* (__stdcall *CreateSessionOptions)(OrtSessionOptions** options);
-        OrtStatus* (__stdcall *SetOptimizedModelFilePath)(OrtSessionOptions* options,
-            const ORTCHAR_T* optimized_model_filepath);
-        OrtStatus* (__stdcall *CloneSessionOptions)(const OrtSessionOptions* options,
-            OrtSessionOptions** out);
-        OrtStatus* (__stdcall *SetSessionExecutionMode)(OrtSessionOptions* options, int execution_mode);
-        OrtStatus* (__stdcall *EnableProfiling)(OrtSessionOptions* options, const ORTCHAR_T* profile_file_prefix);
-        OrtStatus* (__stdcall *DisableProfiling)(OrtSessionOptions* options);
-        OrtStatus* (__stdcall *EnableMemPattern)(OrtSessionOptions* options);
-        OrtStatus* (__stdcall *DisableMemPattern)(OrtSessionOptions* options);
-        OrtStatus* (__stdcall *EnableCpuMemArena)(OrtSessionOptions* options);
-        OrtStatus* (__stdcall *DisableCpuMemArena)(OrtSessionOptions* options);
-        OrtStatus* (__stdcall *SetSessionLogId)(OrtSessionOptions* options, const char* logid);
-        OrtStatus* (__stdcall *SetSessionLogVerbosityLevel)(OrtSessionOptions* options,
-            int session_log_verbosity_level);
-        OrtStatus* (__stdcall *SetSessionLogSeverityLevel)(OrtSessionOptions* options,
-            int session_log_severity_level);
-        OrtStatus* (__stdcall *SetSessionGraphOptimizationLevel)(OrtSessionOptions* options,
-            GraphOptimizationLevel graph_optimization_level);
-        OrtStatus* (__stdcall *SetIntraOpNumThreads)(OrtSessionOptions* options, int intra_op_num_threads);
-        OrtStatus* (__stdcall *SetInterOpNumThreads)(OrtSessionOptions* options, int inter_op_num_threads);
-        OrtStatus* (__stdcall *CreateCustomOpDomain)(const char* domain, OrtCustomOpDomain** out);
-        OrtStatus* (__stdcall *CustomOpDomain_Add)(OrtCustomOpDomain* custom_op_domain,
-            const OrtCustomOp* op);
-        OrtStatus* (__stdcall *AddCustomOpDomain)(OrtSessionOptions* options,
-            OrtCustomOpDomain* custom_op_domain);
-        OrtStatus* (__stdcall *RegisterCustomOpsLibrary)(OrtSessionOptions* options,
-            const char* library_path, void** library_handle);
-        OrtStatus* (__stdcall *SessionGetInputCount)(const OrtSession* session, size_t* out);
-        OrtStatus* (__stdcall *SessionGetOutputCount)(const OrtSession* session, size_t* out);
-        OrtStatus* (__stdcall *SessionGetOverridableInitializerCount)(const OrtSession* session,
-            size_t* out);
-        OrtStatus* (__stdcall *SessionGetInputTypeInfo)(const OrtSession* session, size_t index,
-            OrtTypeInfo** type_info);
-        OrtStatus* (__stdcall *SessionGetOutputTypeInfo)(const OrtSession* session, size_t index,
-            OrtTypeInfo** type_info);
-        OrtStatus* (__stdcall *SessionGetOverridableInitializerTypeInfo)(const OrtSession* session,
-            size_t index, OrtTypeInfo** type_info);
-        OrtStatus* (__stdcall *SessionGetInputName)(const OrtSession* session, size_t index,
-            OrtAllocator* allocator, char** value);
-        OrtStatus* (__stdcall *SessionGetOutputName)(const OrtSession* session, size_t index,
-            OrtAllocator* allocator, char** value);
-        OrtStatus* (__stdcall *SessionGetOverridableInitializerName)(const OrtSession* session,
-            size_t index, OrtAllocator* allocator, char** value);
-        OrtStatus* (__stdcall *CreateRunOptions)(OrtRunOptions** out);
-        OrtStatus* (__stdcall *RunOptionsSetRunLogVerbosityLevel)(OrtRunOptions* options, int log_verbosity_level);
-        OrtStatus* (__stdcall *RunOptionsSetRunLogSeverityLevel)(OrtRunOptions* options, int log_severity_level);
-        OrtStatus* (__stdcall *RunOptionsSetRunTag)(OrtRunOptions* options, const char* run_tag);
-        OrtStatus* (__stdcall *RunOptionsGetRunLogVerbosityLevel)(const OrtRunOptions* options, int* out);
-        OrtStatus* (__stdcall *RunOptionsGetRunLogSeverityLevel)(const OrtRunOptions* options, int* out);
-        OrtStatus* (__stdcall *RunOptionsGetRunTag)(const OrtRunOptions* options, const char** out);
-        OrtStatus* (__stdcall *RunOptionsSetTerminate)(OrtRunOptions* options);
-        OrtStatus* (__stdcall *RunOptionsUnsetTerminate)(OrtRunOptions* options);
-        OrtStatus* (__stdcall *CreateTensorAsOrtValue)(OrtAllocator* allocator,
-            const int64_t* shape, size_t shape_len, ONNXTensorElementDataType type,
-            OrtValue** out);
-        OrtStatus* (__stdcall *CreateTensorWithDataAsOrtValue)(const OrtMemoryInfo* info,
-            void* p_data, size_t p_data_len, const int64_t* shape, size_t shape_len,
-            ONNXTensorElementDataType type, OrtValue** out);
-        OrtStatus* (__stdcall *IsTensor)(const OrtValue* value, int* out);
-        OrtStatus* (__stdcall *GetTensorMutableData)(OrtValue* value, void** out);
-        OrtStatus* (__stdcall *FillStringTensor)(OrtValue* value, const char* const* s, size_t s_len);
-        OrtStatus* (__stdcall *GetStringTensorDataLength)(const OrtValue* value, size_t* len);
-        OrtStatus* (__stdcall *GetStringTensorContent)(const OrtValue* value, void* s,
-            size_t s_len, size_t* offsets, size_t offsets_len);
-        OrtStatus* (__stdcall *CastTypeInfoToTensorInfo)(const OrtTypeInfo* type_info,
-            const OrtTensorTypeAndShapeInfo** out);
-        OrtStatus* (__stdcall *GetOnnxTypeFromTypeInfo)(const OrtTypeInfo* type_info, int* out);
-        OrtStatus* (__stdcall *CreateTensorTypeAndShapeInfo)(OrtTensorTypeAndShapeInfo** out);
-        OrtStatus* (__stdcall *SetTensorElementType)(OrtTensorTypeAndShapeInfo* info,
-            ONNXTensorElementDataType type);
-        OrtStatus* (__stdcall *SetDimensions)(OrtTensorTypeAndShapeInfo* info,
-            const int64_t* dim_values, size_t dim_count);
-        OrtStatus* (__stdcall *GetTensorElementType)(const OrtTensorTypeAndShapeInfo* info,
-            ONNXTensorElementDataType* out);
-        OrtStatus* (__stdcall *GetDimensionsCount)(const OrtTensorTypeAndShapeInfo* info,
-            size_t* out);
-        OrtStatus* (__stdcall *GetDimensions)(const OrtTensorTypeAndShapeInfo* info,
-            int64_t* dim_values, size_t dim_count);
-        OrtStatus* (__stdcall *GetSymbolicDimensions)(const OrtTensorTypeAndShapeInfo* info,
-            const char* const* dim_values, size_t dim_count);
-        OrtStatus* (__stdcall *GetTensorShapeElementCount)(const OrtTensorTypeAndShapeInfo* info,
-            size_t* out);
-        OrtStatus* (__stdcall *GetTensorTypeAndShape)(const OrtValue* value,
-            OrtTensorTypeAndShapeInfo** out);
-        OrtStatus* (__stdcall *GetTypeInfo)(const OrtValue* value, OrtTypeInfo** out);
-        OrtStatus* (__stdcall *GetValueType)(const OrtValue* value, int* out);
-        OrtStatus* (__stdcall *CreateMemoryInfo)(const char* name, OrtAllocatorType type,
-            int device_id, OrtMemType mem_type, OrtMemoryInfo** out);
-        OrtStatus* (__stdcall *CreateCpuMemoryInfo)(OrtAllocatorType type, OrtMemType mem_type,
-            OrtMemoryInfo** out);
-        OrtStatus* (__stdcall *CompareMemoryInfo)(const OrtMemoryInfo* info1, const OrtMemoryInfo* info2, int* out);
-        OrtStatus* (__stdcall *MemoryInfoGetName)(const OrtMemoryInfo* ptr, const char** out);
-        OrtStatus* (__stdcall *MemoryInfoGetId)(const OrtMemoryInfo* ptr, int* out);
-        OrtStatus* (__stdcall *MemoryInfoGetMemType)(const OrtMemoryInfo* ptr, OrtMemType* out);
-        OrtStatus* (__stdcall *MemoryInfoGetType)(const OrtMemoryInfo* ptr, OrtAllocatorType* out);
-        OrtStatus* (__stdcall *AllocatorAlloc)(OrtAllocator* ort_allocator, size_t size, void** out);
-        OrtStatus* (__stdcall *AllocatorFree)(OrtAllocator* ort_allocator, void* p);
-        OrtStatus* (__stdcall *AllocatorGetInfo)(const OrtAllocator* ort_allocator, const OrtMemoryInfo** out);
-        OrtStatus* (__stdcall *GetAllocatorWithDefaultOptions)(OrtAllocator** out);
-        void (__stdcall *ReleaseMemoryInfo)(OrtMemoryInfo* ptr);
-        void (__stdcall *ReleaseTypeInfo)(OrtTypeInfo* ptr);
-        void (__stdcall *ReleaseTensorTypeAndShapeInfo)(OrtTensorTypeAndShapeInfo* ptr);
-        void (__stdcall *ReleaseValue)(OrtValue* value);
-        void (__stdcall *ReleaseSession)(OrtSession* session);
-        void (__stdcall *ReleaseSessionOptions)(OrtSessionOptions* options);
-        void (__stdcall *ReleaseEnv)(OrtEnv* env);
-    };
-
-    const OrtApiBase* __stdcall OrtGetApiBase(void);
-
-    OrtStatus* __stdcall OrtSessionOptionsAppendExecutionProvider_DML(OrtSessionOptions* options, int device_id);
-    OrtStatus* __stdcall OrtSessionOptionsAppendExecutionProvider_CPU(OrtSessionOptions* options, int device_id);
-]])
-
-local ORT_API_VERSION = 24 -- compatible with ONNX Runtime 1.24+
+local ORT_API_VERSION = 30 -- compatible with ONNX Runtime 1.30+
 local ORT_LOGGING_LEVEL_WARNING = 2
 local ORT_ARENA_ALLOCATOR = 1
 local ORT_MEM_TYPE_DEFAULT = 0
@@ -344,8 +137,8 @@ function Onnx.create_session(model_path)
     check(api.DisableProfiling(options_out[0]), "DisableProfiling")
     check(api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
 
-    if USE_DIRECTML then
-        print_log("Using DirectML as the execution provider")
+    if USE_DIRECTML or USE_WEBGPU then
+        print_log("Using GPU (DirectML or WebGPU) as the execution provider")
         check(api.SetSessionExecutionMode(options_out[0], 1), "SetSessionExecutionMode") -- sequential mode
         check(api.DisableMemPattern(options_out[0]), "DisableMemPattern") -- required for GPU ?
 
@@ -355,7 +148,7 @@ function Onnx.create_session(model_path)
         end)
         if not ok then
             err = codepage2codepage(err, 1251, 65001)
-            print_log("Failed to append DirectML execution provider: " .. tostring(err))
+            print_log("Failed to append DirectML/WebGPU execution provider: " .. tostring(err))
             error(err, 2)
         end
     else
@@ -1725,6 +1518,214 @@ function Onnx.upscale(session, image_or_data, return_image_data, tile_size, tile
 
     return love.graphics.newImage(output_image_data)
 end
+
+
+ffi.cdef([[
+    typedef struct OrtEnv OrtEnv;
+    typedef struct OrtSession OrtSession;
+    typedef struct OrtSessionOptions OrtSessionOptions;
+    typedef struct OrtRunOptions OrtRunOptions;
+    typedef struct OrtStatus OrtStatus;
+    typedef struct OrtAllocator OrtAllocator;
+    typedef struct OrtMemoryInfo OrtMemoryInfo;
+    typedef struct OrtValue OrtValue;
+    typedef struct OrtTypeInfo OrtTypeInfo;
+    typedef struct OrtTensorTypeAndShapeInfo OrtTensorTypeAndShapeInfo;
+    typedef struct OrtCustomOpDomain OrtCustomOpDomain;
+    typedef struct OrtCustomOp OrtCustomOp;
+    typedef int32_t OrtErrorCode;
+    typedef wchar_t ORTCHAR_T;
+
+    typedef enum OrtLoggingLevel {
+        ORT_LOGGING_LEVEL_VERBOSE = 0,
+        ORT_LOGGING_LEVEL_INFO = 1,
+        ORT_LOGGING_LEVEL_WARNING = 2,
+        ORT_LOGGING_LEVEL_ERROR = 3,
+        ORT_LOGGING_LEVEL_FATAL = 4
+    } OrtLoggingLevel;
+
+    typedef enum OrtAllocatorType {
+        ORT_ALLOCATOR_INVALID = 0,
+        ORT_ARENA_ALLOCATOR = 1,
+        ORT_HUGEPAGES_ALLOCATOR = 2,
+        ORT_DEVICE_ALLOCATOR = 3,
+        ORT_PINNED_ALLOCATOR = 4
+    } OrtAllocatorType;
+
+    typedef enum OrtMemType {
+        OrtMemTypeDefault = 0,
+        OrtMemTypeCPU = -1,
+        OrtMemTypeCPUOutput = -1
+    } OrtMemType;
+
+    typedef enum GraphOptimizationLevel {
+        ORT_DISABLE_ALL = 0,
+        ORT_ENABLE_BASIC = 1,
+        ORT_ENABLE_EXTENDED = 2,
+        ORT_ENABLE_LAYOUT = 3,
+        ORT_ENABLE_ALL = 99
+    } GraphOptimizationLevel;
+
+    typedef enum ONNXTensorElementDataType {
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED = 0,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT = 1,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8 = 2,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8 = 3,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16 = 4,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16 = 5,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32 = 6,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64 = 7,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING = 8,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL = 9,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 = 10,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE = 11,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32 = 12,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64 = 13,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64 = 14,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128 = 15,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16 = 16
+    } ONNXTensorElementDataType;
+
+    typedef struct OrtApi OrtApi;
+
+    typedef struct OrtApiBase {
+        const OrtApi* (__stdcall *GetApi)(uint32_t version);
+        const char* (__stdcall *GetVersionString)(void);
+    } OrtApiBase;
+
+    struct OrtApi {
+        OrtStatus* (__stdcall *CreateStatus)(OrtErrorCode code, const char* msg);
+        OrtErrorCode (__stdcall *GetErrorCode)(const OrtStatus* status);
+        const char* (__stdcall *GetErrorMessage)(const OrtStatus* status);
+        OrtStatus* (__stdcall *CreateEnv)(OrtLoggingLevel log_severity_level, const char* logid,
+            OrtEnv** out);
+        OrtStatus* (__stdcall *CreateEnvWithCustomLogger)(void* logging_function,
+            void* logger_param, OrtLoggingLevel log_severity_level, const char* logid,
+            OrtEnv** out);
+        OrtStatus* (__stdcall *EnableTelemetryEvents)(const OrtEnv* env);
+        OrtStatus* (__stdcall *DisableTelemetryEvents)(const OrtEnv* env);
+        OrtStatus* (__stdcall *CreateSession)(const OrtEnv* env, const wchar_t* model_path,
+            const OrtSessionOptions* options, OrtSession** out);
+        OrtStatus* (__stdcall *CreateSessionFromArray)(const OrtEnv* env,
+            const void* model_data, size_t model_data_length,
+            const OrtSessionOptions* options, OrtSession** out);
+        OrtStatus* (__stdcall *Run)(OrtSession* session, const OrtRunOptions* run_options,
+            const char* const* input_names, const OrtValue* const* inputs, size_t input_len,
+            const char* const* output_names, size_t output_names_len, OrtValue** outputs);
+        OrtStatus* (__stdcall *CreateSessionOptions)(OrtSessionOptions** options);
+        OrtStatus* (__stdcall *SetOptimizedModelFilePath)(OrtSessionOptions* options,
+            const ORTCHAR_T* optimized_model_filepath);
+        OrtStatus* (__stdcall *CloneSessionOptions)(const OrtSessionOptions* options,
+            OrtSessionOptions** out);
+        OrtStatus* (__stdcall *SetSessionExecutionMode)(OrtSessionOptions* options, int execution_mode);
+        OrtStatus* (__stdcall *EnableProfiling)(OrtSessionOptions* options, const ORTCHAR_T* profile_file_prefix);
+        OrtStatus* (__stdcall *DisableProfiling)(OrtSessionOptions* options);
+        OrtStatus* (__stdcall *EnableMemPattern)(OrtSessionOptions* options);
+        OrtStatus* (__stdcall *DisableMemPattern)(OrtSessionOptions* options);
+        OrtStatus* (__stdcall *EnableCpuMemArena)(OrtSessionOptions* options);
+        OrtStatus* (__stdcall *DisableCpuMemArena)(OrtSessionOptions* options);
+        OrtStatus* (__stdcall *SetSessionLogId)(OrtSessionOptions* options, const char* logid);
+        OrtStatus* (__stdcall *SetSessionLogVerbosityLevel)(OrtSessionOptions* options,
+            int session_log_verbosity_level);
+        OrtStatus* (__stdcall *SetSessionLogSeverityLevel)(OrtSessionOptions* options,
+            int session_log_severity_level);
+        OrtStatus* (__stdcall *SetSessionGraphOptimizationLevel)(OrtSessionOptions* options,
+            GraphOptimizationLevel graph_optimization_level);
+        OrtStatus* (__stdcall *SetIntraOpNumThreads)(OrtSessionOptions* options, int intra_op_num_threads);
+        OrtStatus* (__stdcall *SetInterOpNumThreads)(OrtSessionOptions* options, int inter_op_num_threads);
+        OrtStatus* (__stdcall *CreateCustomOpDomain)(const char* domain, OrtCustomOpDomain** out);
+        OrtStatus* (__stdcall *CustomOpDomain_Add)(OrtCustomOpDomain* custom_op_domain,
+            const OrtCustomOp* op);
+        OrtStatus* (__stdcall *AddCustomOpDomain)(OrtSessionOptions* options,
+            OrtCustomOpDomain* custom_op_domain);
+        OrtStatus* (__stdcall *RegisterCustomOpsLibrary)(OrtSessionOptions* options,
+            const char* library_path, void** library_handle);
+        OrtStatus* (__stdcall *SessionGetInputCount)(const OrtSession* session, size_t* out);
+        OrtStatus* (__stdcall *SessionGetOutputCount)(const OrtSession* session, size_t* out);
+        OrtStatus* (__stdcall *SessionGetOverridableInitializerCount)(const OrtSession* session,
+            size_t* out);
+        OrtStatus* (__stdcall *SessionGetInputTypeInfo)(const OrtSession* session, size_t index,
+            OrtTypeInfo** type_info);
+        OrtStatus* (__stdcall *SessionGetOutputTypeInfo)(const OrtSession* session, size_t index,
+            OrtTypeInfo** type_info);
+        OrtStatus* (__stdcall *SessionGetOverridableInitializerTypeInfo)(const OrtSession* session,
+            size_t index, OrtTypeInfo** type_info);
+        OrtStatus* (__stdcall *SessionGetInputName)(const OrtSession* session, size_t index,
+            OrtAllocator* allocator, char** value);
+        OrtStatus* (__stdcall *SessionGetOutputName)(const OrtSession* session, size_t index,
+            OrtAllocator* allocator, char** value);
+        OrtStatus* (__stdcall *SessionGetOverridableInitializerName)(const OrtSession* session,
+            size_t index, OrtAllocator* allocator, char** value);
+        OrtStatus* (__stdcall *CreateRunOptions)(OrtRunOptions** out);
+        OrtStatus* (__stdcall *RunOptionsSetRunLogVerbosityLevel)(OrtRunOptions* options, int log_verbosity_level);
+        OrtStatus* (__stdcall *RunOptionsSetRunLogSeverityLevel)(OrtRunOptions* options, int log_severity_level);
+        OrtStatus* (__stdcall *RunOptionsSetRunTag)(OrtRunOptions* options, const char* run_tag);
+        OrtStatus* (__stdcall *RunOptionsGetRunLogVerbosityLevel)(const OrtRunOptions* options, int* out);
+        OrtStatus* (__stdcall *RunOptionsGetRunLogSeverityLevel)(const OrtRunOptions* options, int* out);
+        OrtStatus* (__stdcall *RunOptionsGetRunTag)(const OrtRunOptions* options, const char** out);
+        OrtStatus* (__stdcall *RunOptionsSetTerminate)(OrtRunOptions* options);
+        OrtStatus* (__stdcall *RunOptionsUnsetTerminate)(OrtRunOptions* options);
+        OrtStatus* (__stdcall *CreateTensorAsOrtValue)(OrtAllocator* allocator,
+            const int64_t* shape, size_t shape_len, ONNXTensorElementDataType type,
+            OrtValue** out);
+        OrtStatus* (__stdcall *CreateTensorWithDataAsOrtValue)(const OrtMemoryInfo* info,
+            void* p_data, size_t p_data_len, const int64_t* shape, size_t shape_len,
+            ONNXTensorElementDataType type, OrtValue** out);
+        OrtStatus* (__stdcall *IsTensor)(const OrtValue* value, int* out);
+        OrtStatus* (__stdcall *GetTensorMutableData)(OrtValue* value, void** out);
+        OrtStatus* (__stdcall *FillStringTensor)(OrtValue* value, const char* const* s, size_t s_len);
+        OrtStatus* (__stdcall *GetStringTensorDataLength)(const OrtValue* value, size_t* len);
+        OrtStatus* (__stdcall *GetStringTensorContent)(const OrtValue* value, void* s,
+            size_t s_len, size_t* offsets, size_t offsets_len);
+        OrtStatus* (__stdcall *CastTypeInfoToTensorInfo)(const OrtTypeInfo* type_info,
+            const OrtTensorTypeAndShapeInfo** out);
+        OrtStatus* (__stdcall *GetOnnxTypeFromTypeInfo)(const OrtTypeInfo* type_info, int* out);
+        OrtStatus* (__stdcall *CreateTensorTypeAndShapeInfo)(OrtTensorTypeAndShapeInfo** out);
+        OrtStatus* (__stdcall *SetTensorElementType)(OrtTensorTypeAndShapeInfo* info,
+            ONNXTensorElementDataType type);
+        OrtStatus* (__stdcall *SetDimensions)(OrtTensorTypeAndShapeInfo* info,
+            const int64_t* dim_values, size_t dim_count);
+        OrtStatus* (__stdcall *GetTensorElementType)(const OrtTensorTypeAndShapeInfo* info,
+            ONNXTensorElementDataType* out);
+        OrtStatus* (__stdcall *GetDimensionsCount)(const OrtTensorTypeAndShapeInfo* info,
+            size_t* out);
+        OrtStatus* (__stdcall *GetDimensions)(const OrtTensorTypeAndShapeInfo* info,
+            int64_t* dim_values, size_t dim_count);
+        OrtStatus* (__stdcall *GetSymbolicDimensions)(const OrtTensorTypeAndShapeInfo* info,
+            const char* const* dim_values, size_t dim_count);
+        OrtStatus* (__stdcall *GetTensorShapeElementCount)(const OrtTensorTypeAndShapeInfo* info,
+            size_t* out);
+        OrtStatus* (__stdcall *GetTensorTypeAndShape)(const OrtValue* value,
+            OrtTensorTypeAndShapeInfo** out);
+        OrtStatus* (__stdcall *GetTypeInfo)(const OrtValue* value, OrtTypeInfo** out);
+        OrtStatus* (__stdcall *GetValueType)(const OrtValue* value, int* out);
+        OrtStatus* (__stdcall *CreateMemoryInfo)(const char* name, OrtAllocatorType type,
+            int device_id, OrtMemType mem_type, OrtMemoryInfo** out);
+        OrtStatus* (__stdcall *CreateCpuMemoryInfo)(OrtAllocatorType type, OrtMemType mem_type,
+            OrtMemoryInfo** out);
+        OrtStatus* (__stdcall *CompareMemoryInfo)(const OrtMemoryInfo* info1, const OrtMemoryInfo* info2, int* out);
+        OrtStatus* (__stdcall *MemoryInfoGetName)(const OrtMemoryInfo* ptr, const char** out);
+        OrtStatus* (__stdcall *MemoryInfoGetId)(const OrtMemoryInfo* ptr, int* out);
+        OrtStatus* (__stdcall *MemoryInfoGetMemType)(const OrtMemoryInfo* ptr, OrtMemType* out);
+        OrtStatus* (__stdcall *MemoryInfoGetType)(const OrtMemoryInfo* ptr, OrtAllocatorType* out);
+        OrtStatus* (__stdcall *AllocatorAlloc)(OrtAllocator* ort_allocator, size_t size, void** out);
+        OrtStatus* (__stdcall *AllocatorFree)(OrtAllocator* ort_allocator, void* p);
+        OrtStatus* (__stdcall *AllocatorGetInfo)(const OrtAllocator* ort_allocator, const OrtMemoryInfo** out);
+        OrtStatus* (__stdcall *GetAllocatorWithDefaultOptions)(OrtAllocator** out);
+        void (__stdcall *ReleaseMemoryInfo)(OrtMemoryInfo* ptr);
+        void (__stdcall *ReleaseTypeInfo)(OrtTypeInfo* ptr);
+        void (__stdcall *ReleaseTensorTypeAndShapeInfo)(OrtTensorTypeAndShapeInfo* ptr);
+        void (__stdcall *ReleaseValue)(OrtValue* value);
+        void (__stdcall *ReleaseSession)(OrtSession* session);
+        void (__stdcall *ReleaseSessionOptions)(OrtSessionOptions* options);
+        void (__stdcall *ReleaseEnv)(OrtEnv* env);
+    };
+
+    const OrtApiBase* __stdcall OrtGetApiBase(void);
+
+    OrtStatus* __stdcall OrtSessionOptionsAppendExecutionProvider_DML(OrtSessionOptions* options, int device_id);
+    OrtStatus* __stdcall OrtSessionOptionsAppendExecutionProvider_CPU(OrtSessionOptions* options, int device_id);
+]])
 
 
 return Onnx

@@ -1,6 +1,9 @@
 .git/
 onnxruntime/**
 !onnxruntime/.gitkeep
+!onnxruntime/links.txt
+!onnxruntime/DirectML/.gitkeep
+!onnxruntime/DirectML/links.txt
 _INFO/
 _scripts/
 _release/

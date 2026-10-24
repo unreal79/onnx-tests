@@ -2,11 +2,13 @@ Official old BiRefNet models here: https://github.com/ZhengPeng7/BiRefNet/releas
 BiRefNet fp16: https://huggingface.co/onnx-community/BiRefNet-ONNX/tree/main/onnx
 BiRefNet_512x512_fp16.onnx: https://huggingface.co/onnx-community/BiRefNet_512x512-ONNX/tree/main/onnx
 birefnet-lite-512, birefnet-lite-512_fp16: https://huggingface.co/studioludens/birefnet-lite-512/tree/main/onnx
-BiRefNet_lite.onnx, : https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/tree/main/onnx
-InSPyReNet.onnx models: https://huggingface.co/PinkPixel/inspyrenet-onnx
+BiRefNet_lite.onnx : https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/tree/main/onnx
+silueta_320.onnx: https://huggingface.co/jellybox/silueta/tree/main
+silueta-fp32.onnx: https://huggingface.co/themarcocara/silueta-fp16/tree/main (silueta-fp16.onnx crashes)
 u2netp.onnx https://huggingface.co/BritishWerewolf/U-2-Netp/tree/main/onnx
 u2net: https://huggingface.co/f5aiteam/rembg/tree/main
 u2net_human_seg: https://huggingface.co/f5aiteam/rembg/tree/main
+InSPyReNet.onnx, InSPyReNet_fp16.onnx: https://huggingface.co/PinkPixel/inspyrenet-onnx
 IS-Net: https://huggingface.co/BritishWerewolf/IS-Net/tree/main/onnx
 isnet-general-use.onnx: https://huggingface.co/SacredNoir/isnet-general-use-onnx/tree/main
 isnet-general-use-fp16.onnx: https://huggingface.co/tiper-penta/isnet-general-use-fp16/tree/main
@@ -18,3 +20,4 @@ RMBG-2.0_fp16.onnx, RMBG-2.0_int8.onnx, RMBG-2.0_quantized.onnx: https://hugging
 rmbg-1-4.onnx, rmbg-1-4_quantized.onnx: https://huggingface.co/imgdesignart/rmbg-1-4-onnx/tree/main/onnx bad results
 rmbg_q4f16.onnx: https://huggingface.co/mujibanget/rmbg-onnx/tree/main/onnx
 rmbg.onnx: https://huggingface.co/KPGADANI/rmbg.onnx/tree/main bad results
+withoutbg-open-weights.onnx, withoutbg-open-weights-backbone.onnx: https://huggingface.co/withoutbg/withoutbg-openweights-onnx need code rewriting

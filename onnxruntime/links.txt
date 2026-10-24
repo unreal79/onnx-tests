@@ -1,0 +1,3 @@
+https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime
+
+Download, rename to zip, extract \runtimes\win-x64\native\ from archive.
