@@ -1,7 +1,6 @@
 -- main.lua
 
----- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
-local WORKING_MODE = "upscaling"
+local WORKING_MODE = "upscaling" -- Main working mode. Options: "upscaling", "inpainting", "background_removal", "colorizing"
 local ONNXRUNTIME_PROVIDER = "DirectML" -- Options: "DirectML" == "WebGPU" (GPU) or "" (CPU)
 
 local IMAGE_PATH = "assets/parrot.png" -- Main input image
@@ -12,8 +11,8 @@ local IMAGE_WITH_HOLES_PATH = "assets/parrot_with_holes.png" -- Input image with
 local IMAGE_BW_PATH = "assets/eiffel_bw_small.png" -- Input image in black and white, smaller version
 
 ---- Models. Uncomment the one you want to use for upscaling.
-local UPSCALER_TILE_SIZE = 256
-local UPSCALER_TILE_OVERLAP = 32
+local UPSCALER_TILE_SIZE = 256 -- split image into tiles of this size
+local UPSCALER_TILE_OVERLAP = 32 -- overlap between tiles to avoid seams
 local MODEL_UPSCALER_PATH = "models/upscale/4x-ClearRealityV1.onnx" -- 8 sec, x4, ADVANCED, DirectML: 3 sec
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Archivist_Soft.onnx" -- 7 sec, bad, eats details, DirectML: 2 sec
 -- local MODEL_UPSCALER_PATH = "models/upscale/1x-Kim2091-DeJpeg-v0.onnx" -- 36 sec, good, DirectML: 5 sec
@@ -68,7 +67,7 @@ local MODEL_COLORIZER_PATH = "models/colorize/ddcolor-512-fp16.onnx" -- 11/16 se
 -- local MODEL_COLORIZER_PATH = "models/colorize/deoldify_quantized.onnx" -- 4/8 sec, bad, many bugs everywhere
 -- local MODEL_COLORIZER_PATH = "models/colorize/manga-colorize-fp16.onnx" -- 20/48 sec, bad, low resolution
 
-local BACKGROUND_REMOVAL_THRESHOLD = 0.25
+local BACKGROUND_REMOVAL_THRESHOLD = 0.25 -- threshold for background removal, lower values remove more background
 local MODEL_BG_REMOVER_PATH = "models/bg_remove/birefnet-lite-512.onnx" -- 12 sec, above average RAM hungry
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_512x512_fp16.onnx" -- 30 sec, average RAM hungry, DirectML: 20 sec
 -- local MODEL_BG_REMOVER_PATH = "models/bg_remove/BiRefNet_lite.onnx" -- 27 sec, very RAM hungry

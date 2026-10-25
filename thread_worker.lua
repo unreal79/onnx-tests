@@ -8,11 +8,10 @@ require("love.image")
 require("love.font")
 require("love.system")
 require("utils")
-require("onnx")
+local Onnx = require("onnx")
 
-local ONNXRUNTIME_PATH = "onnxruntime/onnxruntime"
-local ONNXRUNTIME_DIRECTML_PATH = "onnxruntime/DirectML/onnxruntime"
-local ONNXRUNTIME_WEBGPU_PATH = "onnxruntime/DirectML/onnxruntime"
+local ONNXRUNTIME_PATH = "onnxruntime/onnxruntime.dll"
+local DirectML = "onnxruntime/DirectML.dll"
 USE_DIRECTML = false
 USE_WEBGPU = false
 
@@ -35,7 +34,22 @@ end
 --- Helper function to initialize ONNX Runtime
 --- @param model_path string # path to the ONNX model file
 local function onnx_init_and_create_session(model_path, image_path)
-    local Onnx = require("onnx")
+    local f1 = io.open(ONNXRUNTIME_PATH)
+    if f1 then f1:close() else
+        error("ONNX Runtime DLL not found at path: " .. ONNXRUNTIME_PATH)
+    end
+
+    if USE_DIRECTML or USE_WEBGPU then
+        print_log("Using GPU (DirectML or WebGPU) as the execution provider")
+        local f2 = io.open(DirectML)
+        if f2 then
+            f2:close()
+            print_log("Found ONNX Runtime DirectML DLL at path: " .. DirectML)
+        else
+            error("ONNX Runtime DirectML DLL not found at path: " .. DirectML)
+        end
+    end
+
     local ok, err = pcall(function() return Onnx.init(ONNXRUNTIME_PATH) end)
     local onnx_api, init_state = ok and err or nil, ok and not err and {} or {load_error = err}
     if not onnx_api then
@@ -45,7 +59,9 @@ local function onnx_init_and_create_session(model_path, image_path)
     end
 
     print_log("Using model: `" .. model_path .. "`")
-    ok, err = pcall(function() return Onnx.create_session(model_path) end)
+    ok, err = pcall(function()
+        return Onnx.create_session(onnx_api, model_path)
+    end)
     local session = ok and err or nil
     if not session or not session.session then
         print_log("Failed to create ONNX session")
@@ -82,12 +98,6 @@ local function worker1_onnx_remove_background(step, command)
         local alpha_threshold = tonumber(commands[4])
         USE_DIRECTML = commands[5] == "DirectML"
         USE_WEBGPU = commands[5] == "WebGPU"
-        if USE_DIRECTML then
-            ONNXRUNTIME_PATH = ONNXRUNTIME_DIRECTML_PATH
-        elseif USE_WEBGPU then
-            ONNXRUNTIME_PATH = ONNXRUNTIME_WEBGPU_PATH
-        end
-
 
         send_status("remove_background_start") -- hardcoded
 
@@ -136,11 +146,6 @@ local function worker2_onnx_upscale(step, command)
         local tile_overlap = tonumber(commands[5])
         USE_DIRECTML = commands[6] == "DirectML"
         USE_WEBGPU = commands[6] == "WebGPU"
-        if USE_DIRECTML then
-            ONNXRUNTIME_PATH = ONNXRUNTIME_DIRECTML_PATH
-        elseif USE_WEBGPU then
-            ONNXRUNTIME_PATH = ONNXRUNTIME_WEBGPU_PATH
-        end
 
         send_status("upscale_start") -- hardcoded
 
@@ -188,11 +193,6 @@ local function worker3_onnx_inpaint(step, command)
         local alpha_threshold = tonumber(commands[4])
         USE_DIRECTML = commands[5] == "DirectML"
         USE_WEBGPU = commands[5] == "WebGPU"
-        if USE_DIRECTML then
-            ONNXRUNTIME_PATH = ONNXRUNTIME_DIRECTML_PATH
-        elseif USE_WEBGPU then
-            ONNXRUNTIME_PATH = ONNXRUNTIME_WEBGPU_PATH
-        end
 
         send_status("inpaint_start") -- hardcoded
 
@@ -240,11 +240,6 @@ local function worker4_onnx_colorize(step, command)
         local model_type = commands[4] or "colorize"
         USE_DIRECTML = commands[5] == "DirectML"
         USE_WEBGPU = commands[5] == "WebGPU"
-        if USE_DIRECTML then
-            ONNXRUNTIME_PATH = ONNXRUNTIME_DIRECTML_PATH
-        elseif USE_WEBGPU then
-            ONNXRUNTIME_PATH = ONNXRUNTIME_WEBGPU_PATH
-        end
 
         send_status("colorize_start") -- hardcoded
 

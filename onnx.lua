@@ -9,6 +9,7 @@ local ORT_LOGGING_LEVEL_WARNING = 2
 local ORT_ARENA_ALLOCATOR = 1
 local ORT_MEM_TYPE_DEFAULT = 0
 local ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT = 1
+local GPU_DEVICE_ID = 0
 local NULL = ffi.cast("void*", 0)
 
 local Onnx = {
@@ -55,13 +56,13 @@ function Onnx.init(runtime_path)
 
     local ok, ort = pcall(ffi.load, runtime_path)
     if not ok then
-        State.load_error = "onnxruntime: Failed to load " .. runtime_path .. ".dll"
+        State.load_error = "onnxruntime: Failed to load " .. runtime_path
         print_log(State.load_error)
         Onnx.load_error = State.load_error
         return nil, State
     end
 
-    print_log("Loaded '" .. runtime_path .. ".dll' library")
+    print_log("Loaded '" .. runtime_path .. "' library")
 
     State.ort = ort
 
@@ -92,22 +93,18 @@ end
 
 
 --- Creates and caches the ONNX Runtime environment for future sessions.
+--- @param onnx_api userdata # ONNX Runtime API reference obtained from Onnx.init()
 --- @param log_id string|nil # Name used in the environment log output.
 --- @param severity number|nil # Logging severity level for the environment.
 --- @return userdata # Initialized ONNX Runtime environment handle.
-function Onnx.create_env(log_id, severity)
-    local api, err = Onnx.init()
-    if not api then
-        error(err, 2)
-    end
-
+function Onnx.create_env(onnx_api, log_id, severity)
     if State.env ~= nil and State.env[0] ~= nil and State.env[0] ~= NULL then
         return State.env[0]
     end
 
     local env_out = ffi.new("OrtEnv*[1]")
-    check(api.CreateEnv(severity or ORT_LOGGING_LEVEL_WARNING, log_id or "Love2D", env_out),
-        "CreateEnv")
+    check(onnx_api.CreateEnv(severity or ORT_LOGGING_LEVEL_WARNING, log_id or "Love2D", env_out),
+            "CreateEnv")
     State.env = env_out
 
     print_log("ONNX Runtime environment created successfully")
@@ -116,34 +113,29 @@ end
 
 
 --- Creates an ONNX Runtime session for the specified model path.
+--- @param onnx_api userdata # ONNX Runtime API reference obtained from Onnx.init()
 --- @param model_path string # Path to the ONNX model file.
 --- @return table # Session metadata containing the environment, options, handle, model path, and status message.
-function Onnx.create_session(model_path)
+function Onnx.create_session(onnx_api, model_path)
     if type(model_path) ~= "string" or model_path == "" then
         error("ONNX model_path must be a non-empty string", 2)
     end
 
-    local api, err = Onnx.init()
-    if not api then
-        error(err, 2)
-    end
-
-    local env = Onnx.create_env()
+    local env = Onnx.create_env(onnx_api)
 
     -- setting session options
     local options_out = ffi.new("OrtSessionOptions*[1]")
-    check(api.CreateSessionOptions(options_out), "CreateSessionOptions")
+    check(onnx_api.CreateSessionOptions(options_out), "CreateSessionOptions")
 
-    check(api.DisableProfiling(options_out[0]), "DisableProfiling")
-    check(api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
+    check(onnx_api.DisableProfiling(options_out[0]), "DisableProfiling")
+    check(onnx_api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
 
     if USE_DIRECTML or USE_WEBGPU then
-        print_log("Using GPU (DirectML or WebGPU) as the execution provider")
-        check(api.SetSessionExecutionMode(options_out[0], 1), "SetSessionExecutionMode") -- sequential mode
-        check(api.DisableMemPattern(options_out[0]), "DisableMemPattern") -- required for GPU ?
+        check(onnx_api.SetSessionExecutionMode(options_out[0], 1), "SetSessionExecutionMode") -- sequential mode
+        check(onnx_api.DisableMemPattern(options_out[0]), "DisableMemPattern") -- required for GPU ?
 
         local ok, err = pcall(function()
-            return check(State.ort.OrtSessionOptionsAppendExecutionProvider_DML(options_out[0], 0),
+            return check(State.ort.OrtSessionOptionsAppendExecutionProvider_DML(options_out[0], GPU_DEVICE_ID),
                 "OrtSessionOptionsAppendExecutionProvider_DML")
         end)
         if not ok then
@@ -156,14 +148,14 @@ function Onnx.create_session(model_path)
         -- check(api.EnableMemPattern(options_out[0]), "EnableMemPattern")
         -- check(State.ort.OrtSessionOptionsAppendExecutionProvider_CPU(options_out[0], 0),
         --     "OrtSessionOptionsAppendExecutionProvider_CPU")
-        check(api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
-        check(api.SetSessionGraphOptimizationLevel(options_out[0], 1),
+        check(onnx_api.DisableCpuMemArena(options_out[0]), "DisableCpuMemArena") -- frees memory after session
+        check(onnx_api.SetSessionGraphOptimizationLevel(options_out[0], 1),
             "SetSessionGraphOptimizationLevel") -- sets the graph optimization level to basic=1
     end
 
     local session_out = ffi.new("OrtSession*[1]")
     local wide_model_path = utf8_to_wide(model_path)
-    check(api.CreateSession(env, wide_model_path, options_out[0], session_out), "CreateSession")
+    check(onnx_api.CreateSession(env, wide_model_path, options_out[0], session_out), "CreateSession")
 
     return {
         env = env,
